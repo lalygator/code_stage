@@ -118,11 +118,11 @@ class PSF_utils:
         return self.psf
 
 # * Choix de la pupille
-aper = Aperture('HSP2')
+aper = Aperture('ELT')
 
 # * Choix des paramètres
-owa = 38 # OWA de l'apodiseur considéré
-N = 3 # résolution, valeur minimale pour etre a Nyquist
+owa = 20 # OWA de l'apodiseur considéré
+N = 2 # résolution, valeur minimale pour etre a Nyquist
 fov = int(5*2.5*owa) # champ de vue de la psf
 nbr_pix = int(N * 2 * fov) # nombre de pixels, minimum 2 par lambda/D pour Nyquist à N=1
 M = 500 # temps d'OA considéré, en ms #//1min pour faire 1500 avec np multiply
@@ -137,7 +137,8 @@ x_min=y_min=-b*fov/2
 x_max=y_max=b*fov/2
 
 plt.figure()
-plt.imshow(psf_LP/psf_LP.max(), norm=colors.LogNorm(vmin=1e-8),extent=[x_min,x_max,x_min,x_max])
+plt.imshow(psf_LP/psf_LP.max(), norm=colors.LogNorm(vmin=1e-6),extent=[x_min,x_max,x_min,x_max])
+plt.colorbar()
 plt.xlabel(r"$\lambda/D$")
 plt.xticks(rotation=45, ha="right")
 plt.ylabel(r"$\lambda/D$")
@@ -176,7 +177,17 @@ def hamming(x, y, T):
     # * Y'a un petit problème d'arrondi ou c'est pas exactement 1 le max mais 0.99998
 
     return window
-# // TODO comprendre comment ces paramètres jouent en terme de lambda/D
+
+def sup_gauss(x,y,s,ord):
+    r = np.sqrt(x**2 + y**2)
+    mask = r <= s
+    window = np.zeros_like(r)
+    window[mask] = 0.5 + 0.5*np.cos(2 * np.pi * r[mask] / (2*T))
+    # * Y'a un petit problème d'arrondi ou c'est pas exactement 1 le max mais 0.99998
+
+    return window
+    
+
 R = nbr_pix
 grid_x, grid_y = np.meshgrid(np.linspace(-R, R, nbr_pix), np.linspace(-R, R, nbr_pix)) # correctino par 4000 pour éviter que ça fasse plus la meme taille en nombre de pixel que la PSF à cause du padding de 2000 ajouté
 # pour avoir tout le cercle jusqu'au bord il faut T=2*R
@@ -184,19 +195,20 @@ grid_x, grid_y = np.meshgrid(np.linspace(-R, R, nbr_pix), np.linspace(-R, R, nbr
 # si T plus petit que 2*R alors ça fait plus petit
 
 
-fact = 220 # ! taille en lambda /D du rayon du filtre, en dehors le champ sera nul
+fact = 60#fov//2 # ! taille en lambda/D du rayon du filtre, en dehors le champ sera nul
 
 T = 2*(2*N)*fact# nombre de pixel du diamètre du filtre criculaire
+# * En gros c'est la conversion de lambda/D vers les pixels pour faire le calcul de la fenetre de Hann
 hamm = hamming(grid_x, grid_y, T) 
 plt.figure()
 plt.imshow(hamm,extent=[x_min,x_max,x_min,x_max])#,norm=colors.LogNorm())
 plt.xlabel(r"$\lambda/D$")
 plt.ylabel(r"$\lambda/D$")
-plt.title("Fenêtre de Hamming")
+plt.title("Fenêtre de Hann")
 plt.colorbar()
 plt.show()
-
-f = 4 # facteur de largeur du champ de vue de l'OTF
+#%%
+f = 3# facteur de largeur du champ de vue de l'OTF
 
 def OTF(psf,fov,nbr_pix): #soit le produit de OTF_telescope et OTF_atm, ou autocorrelation onde incidente capturée par le telescopes
     otf = ft_BASIC(psf, fov, f*1132/1024, nbr_pix, direction=1)#/ft_BASIC(sq, fov, 1132/1024,N,direction=-1)
@@ -208,14 +220,14 @@ def OTF(psf,fov,nbr_pix): #soit le produit de OTF_telescope et OTF_atm, ou autoc
 psf_name = 'longue pose'
 
 if psf_name == 'longue pose':
-    psf = psf_LP#*hamm
+    psf = psf_LP*hamm
 else:
     psf = psf_tel
 
 # * Affichage de la PSF
 
 plt.figure()
-plt.imshow(psf/psf.max(), norm=colors.LogNorm(),extent=[x_min,x_max,x_min,x_max])
+plt.imshow(psf/psf.max(), norm=colors.LogNorm(vmin=1e-6),extent=[x_min,x_max,x_min,x_max])
 plt.xlabel(r"$\lambda/D$")
 plt.ylabel(r"$\lambda/D$")
 plt.colorbar()
@@ -292,7 +304,7 @@ class DSP:
         otf_tel = ft_BASIC(self.psf_pup, self.fov, f_gr*1132/1024, self.N, direction=1) # OTF PSF corono
         #//b = np.where(b>=2e-4,b,7e-6)
         plt.figure()
-        plt.imshow(np.abs(otf_lp)/np.abs(otf_lp).max(),norm=colors.LogNorm(),extent=[f_gr/x_min,f_gr/x_max,f_gr/x_min,f_gr/x_max]) # affichage MTF PSF longue pose
+        plt.imshow(np.abs(otf_lp)/np.abs(otf_lp).max(),norm=colors.LogNorm(vmin=1e-6),extent=[f_gr/x_min,f_gr/x_max,f_gr/x_min,f_gr/x_max]) # affichage MTF PSF longue pose
         plt.colorbar()
         plt.title('MTF de la PSF longue pose')
         plt.xlabel(r'$D/\lambda$')
@@ -304,13 +316,21 @@ class DSP:
         plt.show()
         #//r = ft_BASIC(self.psf_LP,7*self.fov, 1132/1024, self.N, direction=1)/ft_BASIC(self.psf_pup,7*self.fov, 1132/1024, self.N, direction=1) # * complexe
         r = otf_lp/otf_tel # * complexe
-        Re = np.log(np.abs(r))
-        Im = np.angle(r)
-        tf_inv = (Re + 1j*Im) #*hamm
+        Re = np.log(np.abs(r))*hamm
+        Im = np.angle(r)*hamm
+        tf_inv = (Re + 1j*Im)#*hamm
         #tf_inv = Re*np.exp(1j*Im)
-        return ft_BASIC(tf_inv, 1132/1024, self.fov, self.N, direction=1)
+        plt.figure()
+        plt.imshow(Re)
+        plt.title('Affichage partie réelle TF-1 DSP')
+        plt.figure()
+        plt.imshow(Im)
+        plt.title('Affichage partie imaginaire TF-1 DSP')       
+        plt.show()
+        return ft_BASIC(tf_inv, f_gr*1132/1024, self.fov, self.N, direction=1)
 
 # ! HSP1 n'est pas le bon ou il a été modifié entre temps
+
 
 #%%
 # PSF_aper = PSF_utils(aper,7*fov,nbr_pix,N,norm=True)#,OAtime=100)
@@ -330,34 +350,40 @@ class DSP:
 
 #%%
 # * Calcul de la DSP
-psf_LP_hamm = psf_LP#*hamm
-psf_tel_hamm = psf_tel#*hamm
-a=0.5
+psf_LP_hamm = psf_LP*hamm
+psf_tel_hamm = psf_tel*hamm
+a = 0.5
 dsp = DSP(psf_LP_hamm,psf_tel_hamm,fov,nbr_pix).DSP()
 plt.figure()
-plt.imshow(np.abs(dsp)/np.abs(dsp).max(),norm=colors.LogNorm(vmin=1e-8),extent=[a*x_min,a*x_max,a*x_min,a*x_max]) # ! pas encore correct, à faire attention
+plt.imshow(np.abs(dsp)/np.abs(dsp).max(),norm=colors.LogNorm(vmin=1e-10),extent=[a*x_min,a*x_max,a*x_min,a*x_max]) # ! pas encore correct, à faire attention
 plt.colorbar()
 plt.xlabel(r'$D/\lambda$')
 plt.ylabel(r'$D/\lambda$')
 plt.title('DSP')
 plt.show()
 
+
 #%%
 def DSP2PSF(psf_pup,dsp):
     plt.figure()
-    otf_pup = ft_BASIC(psf_pup,fov, 1132/1024, nbr_pix, direction=1)*hamm
+    otf_pup = ft_BASIC(psf_pup,fov, 2*1132/1024, nbr_pix, direction=1)#*hamm
     plt.imshow(np.abs(otf_pup),norm=colors.LogNorm())
-    kernel = np.exp(ft_BASIC(dsp, 1132/1024, fov, nbr_pix, direction=-1))
+    plt.title("OTF pupille")
+    ft_DSP = np.abs(ft_BASIC(dsp, 2*1132/1024, fov, nbr_pix, direction=1))
+    kernel = np.exp(1e5*(ft_DSP-ft_DSP[nbr_pix//2,nbr_pix//2]))
     plt.figure()
-    plt.imshow(np.abs(kernel))#,norm=colors.LogNorm())
+    plt.imshow((kernel))#,norm=colors.LogNorm())
+    plt.colorbar()
+    plt.title("OTF Atmosphérique")
     plt.show()
-    psf_fin = ft_BASIC(otf_pup*kernel,1132 / 1024, fov, nbr_pix, direction=1)
+    psf_fin = ft_BASIC(otf_pup*kernel,2*1132 / 1024, fov, nbr_pix, direction=-1)
     return psf_fin
 
 # * Affichage de la PSF reconstruite depuis la DSP avec la fonction DSP2PSF au dessus
 plt.figure()
 psf_reconstr = np.abs(DSP2PSF(psf_tel, dsp))
-plt.imshow(psf_reconstr/psf_reconstr.max(),norm=colors.LogNorm(vmin=1e-8),extent=[x_min,x_max,x_min,x_max])
+plt.imshow(psf_reconstr/psf_reconstr.max(),norm=colors.LogNorm(vmin=1e-6),extent=[x_min,x_max,x_min,x_max])
+plt.colorbar()
 plt.title("PSF reconstruite depuis la DSP")
 plt.xlabel(r'$\lambda/D$')
 plt.ylabel(r'$\lambda/D$')
@@ -366,7 +392,8 @@ plt.ylabel(r'$\lambda/D$')
 # plt.figure()
 # plt.imshow(psf/psf.max(),norm=colors.LogNorm(vmin=1e-8))
 plt.figure()
-plt.imshow(psf_LP/psf_LP.max(),norm=colors.LogNorm(vmin=1e-8),extent=[x_min,x_max,x_min,x_max])
+plt.imshow(psf_LP/psf_LP.max(),norm=colors.LogNorm(vmin=1e-6),extent=[x_min,x_max,x_min,x_max])
+plt.colorbar()
 plt.title("PSF longue pose initiale")
 plt.xlabel(r'$\lambda/D$')
 plt.ylabel(r'$\lambda/D$')
@@ -374,11 +401,41 @@ plt.show()
 
 # * Affichage de la PSF coronographique
 plt.figure()
-plt.imshow(psf_tel/psf_tel.max(),norm=colors.LogNorm(vmin=1e-8),extent=[x_min,x_max,x_min,x_max])
+plt.imshow(psf_tel/psf_tel.max(),norm=colors.LogNorm(vmin=1e-6),extent=[x_min,x_max,x_min,x_max])
+plt.colorbar()
 plt.title("PSF coronographique initiale")
 plt.xlabel(r'$\lambda/D$')
 plt.ylabel(r'$\lambda/D$')
 plt.show()
+#%%
+otf_atmo = ft_BASIC(psf_LP,fov, 2,nbr_pix,direction=-1)/ft_BASIC(psf_tel,fov,2,nbr_pix,direction=-1)
+
+R = 1
+grid_x, grid_y = np.meshgrid(np.linspace(-R, R, nbr_pix), np.linspace(-R, R, nbr_pix))
+mask = np.sqrt(grid_x**2+grid_y**2) <= 0.95
+otf_atmo_filtr = otf_atmo*mask
+
+mtf_atmo = (otf_atmo_filtr).real
+plt.figure()
+plt.imshow(mtf_atmo,norm=colors.LogNorm())
+plt.title("MTF atmosphérique")
+plt.colorbar()
+plt.figure()
+azav_mtf = AZAV(mtf_atmo, owa, 1)[0]
+plt.title("Moyenne azimutal de la MTF atmosphérique")
+plt.semilogy(azav_mtf)
+plt.show()
+
+#%%
+def OTF2PSF(otf_atmo,psf_tel): # en remplacement de DSP2PSF
+    # ! pour l'instant on suppose que otf_atmo = mtf_atmo
+    psf_rec = mtf_atmo*np.abs(ft_BASIC(psf_tel,fov,2,nbr_pix,direction=1))
+    plt.figure()
+    plt.imshow(psf_rec/psf_rec.max(),norm=colors.LogNorm())
+    plt.colorbar()
+    plt.title("PSF reconstruite")
+    
+test = OTF2PSF(otf_atmo,psf_tel)
 
 #%%
 # plt.figure()
