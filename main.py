@@ -4,6 +4,8 @@ from astropy.io import fits
 from utils_OA import READ_DAT, SQ, timeit, ft_BASIC, AZAV
 import matplotlib.pyplot as plt
 import pickle
+from astropy.io import fits
+from matplotlib.path import Path
 import matplotlib.colors as colors
 
 
@@ -118,16 +120,23 @@ class PSF_utils:
         return self.psf
 
 # * Choix de la pupille
-aper = Aperture('ELT')
+aper = Aperture('HSP2')
 
 # * Choix des paramètres
-owa = 20 # OWA de l'apodiseur considéré
+owa = 38 # OWA de l'apodiseur considéré
 N = 2 # résolution, valeur minimale pour etre a Nyquist
 fov = int(5*2.5*owa) # champ de vue de la psf
 nbr_pix = int(N * 2 * fov) # nombre de pixels, minimum 2 par lambda/D pour Nyquist à N=1
-M = 500 # temps d'OA considéré, en ms #//1min pour faire 1500 avec np multiply
+M = 2000 # temps d'OA considéré, en ms #//1min pour faire 1500 avec np multiply
 psf_LP = PSF_utils(aper,fov,nbr_pix,M).PSF()
-psf_tel = PSF_utils(aper,fov,nbr_pix).PSF()#,OAtime=100)
+psf_tel = PSF_utils(aper,fov,nbr_pix).PSF()
+#%%
+psf_LP_500 = PSF_utils(aper,fov,nbr_pix,500).PSF()
+psf_LP_1000 = PSF_utils(aper,fov,nbr_pix,1000).PSF()
+psf_LP_1500 = PSF_utils(aper,fov,nbr_pix,1500).PSF()
+psf_LP_2000 = psf_LP#PSF_utils(aper,fov,nbr_pix,2000).PSF()
+fits.writeto('psf_LP_2000_HSP2.fits', psf_LP_2000, overwrite=True)
+
 
 #%%
 # * Affichage de la PSF
@@ -135,7 +144,7 @@ psf_tel = PSF_utils(aper,fov,nbr_pix).PSF()#,OAtime=100)
 b=1 #lambda/D
 x_min=y_min=-b*fov/2
 x_max=y_max=b*fov/2
-
+#%%
 plt.figure()
 plt.imshow(psf_LP/psf_LP.max(), norm=colors.LogNorm(vmin=1e-6),extent=[x_min,x_max,x_min,x_max])
 plt.colorbar()
@@ -408,34 +417,205 @@ plt.xlabel(r'$\lambda/D$')
 plt.ylabel(r'$\lambda/D$')
 plt.show()
 #%%
-otf_atmo = ft_BASIC(psf_LP,fov, 2,nbr_pix,direction=-1)/ft_BASIC(psf_tel,fov,2,nbr_pix,direction=-1)
+
+#! Calcul de l'OTF et application d'un masque
+
+otf_atmo_500 = ft_BASIC(psf_LP_500,fov, 2,nbr_pix,direction=-1)/ft_BASIC(psf_tel,fov,2,nbr_pix,direction=-1)
+otf_atmo_1000 = ft_BASIC(psf_LP_1000,fov, 2,nbr_pix,direction=-1)/ft_BASIC(psf_tel,fov,2,nbr_pix,direction=-1)
+otf_atmo_1500 = ft_BASIC(psf_LP_1500,fov, 2,nbr_pix,direction=-1)/ft_BASIC(psf_tel,fov,2,nbr_pix,direction=-1)
+otf_atmo_2000 = np.abs(ft_BASIC(psf_LP,fov, 2,nbr_pix,direction=-1)/ft_BASIC(psf_tel,fov,2,nbr_pix,direction=-1)) # comme le LP à été calculé pour 2000ms
+
 
 R = 1
 grid_x, grid_y = np.meshgrid(np.linspace(-R, R, nbr_pix), np.linspace(-R, R, nbr_pix))
-mask = np.sqrt(grid_x**2+grid_y**2) <= 0.95
-otf_atmo_filtr = otf_atmo*mask
+mask = np.sqrt(grid_x**2+grid_y**2) <= 1
 
-mtf_atmo = (otf_atmo_filtr).real
+#%%
+def n(x,y,N):
+    m = 0
+    for k in range(0,N):
+        v = np.abs(np.cos(2*np.pi*k/N)*x+np.sin(2*np.pi*k/N)*y)
+        if v > m:
+            m=v
+    return m
+n = np.vectorize(n)
+grid_x,grid_y = np.meshgrid(np.linspace(-1000/964,1000/964,1900),np.linspace(-1000/964,1000/964,1900))
+boule = n(grid_x,grid_y,12) <= 1
+
+plt.imshow(boule)
+#%%
+otf_atmo_filtr_500 = otf_atmo_500*mask
+otf_atmo_filtr_1000 = otf_atmo_1000*mask
+otf_atmo_filtr_1500 = otf_atmo_1500*mask
+otf_atmo_filtr_2000 = otf_atmo_2000*boule
+
+
+fits.writeto('mtf_atmo_filtr_dod_2000_apod.fits', otf_atmo_filtr_2000, overwrite=True)
+fits.writeto('mtf_atmo_2000_apod.fits', otf_atmo_2000, overwrite=True)
+
+
+
+
+#%%
 plt.figure()
-plt.imshow(mtf_atmo,norm=colors.LogNorm())
-plt.title("MTF atmosphérique")
-plt.colorbar()
+plt.imshow(np.abs(otf_atmo_2000),norm=colors.LogNorm())
+plt.title('OTF atmosphérique')
 plt.figure()
-azav_mtf = AZAV(mtf_atmo, owa, 1)[0]
-plt.title("Moyenne azimutal de la MTF atmosphérique")
-plt.semilogy(azav_mtf)
+plt.imshow(np.abs(otf_atmo_filtr_2000),norm=colors.LogNorm())
+plt.title('OTF atmosphérique filtrée')
+
+
+# * c'est bien que l'autocorrelation de la pupille de l'ELT donne cette forme d'héxagone donc c'est normal :D
+
+#%%
+#! affichage de la MTF en valeur absolue
+#mtf_atmo = np.abs(otf_atmo_filtr)
+
+plt.figure()
+plt.title("Moyenne azimutal de la MTF atmosphérique \npour différents temps d'OA")
+plt.xlabel(r"$D/\lambda$")
+plt.ylabel("u.a. (MTF non normalisé)")
+plt.semilogy(np.linspace(0,2/x_max,nbr_pix//2),AZAV((otf_atmo_filtr_500).real,owa,1)[0],label="500ms (réelle)",color='blue')
+plt.semilogy(np.linspace(0,2/x_max,nbr_pix//2),AZAV(np.abs(otf_atmo_filtr_500),owa,1)[0],label="500ms (abs)",linestyle='dashed', color='blue')
+plt.semilogy(np.linspace(0,2/x_max,nbr_pix//2),AZAV((otf_atmo_filtr_1000).real,owa,1)[0],label="1000ms (réelle)",color='orange')
+plt.semilogy(np.linspace(0,2/x_max,nbr_pix//2),AZAV(np.abs(otf_atmo_filtr_1000),owa,1)[0],label="1000ms (abs)",linestyle='dashed',color='orange')
+plt.semilogy(np.linspace(0,2/x_max,nbr_pix//2),AZAV((otf_atmo_filtr_1500).real,owa,1)[0],label="1500ms (réelle)",color='green')
+plt.semilogy(np.linspace(0,2/x_max,nbr_pix//2),AZAV(np.abs(otf_atmo_filtr_1500),owa,1)[0],label="1500ms (abs)",linestyle='dashed',color='green')
+plt.semilogy(np.linspace(0,2/x_max,nbr_pix//2),AZAV((otf_atmo_filtr_2000).real,owa,1)[0],label="2000ms (réelle)",color='red')
+plt.semilogy(np.linspace(0,2/x_max,nbr_pix//2),AZAV(np.abs(otf_atmo_filtr_2000),owa,1)[0],label="2000ms (abs)",linestyle='dashed',color='red')
+plt.legend()
 plt.show()
+
+fig, axs = plt.subplots(2, 2, figsize=(10, 10))
+im_list = [
+    otf_atmo_filtr_500.imag,
+    otf_atmo_filtr_1000.imag,
+    otf_atmo_filtr_1500.imag,
+    otf_atmo_filtr_2000.imag
+]
+titles = ["500ms", "1000ms", "1500ms", "2000ms"]
+
+for ax, im, title in zip(axs.flat, im_list, titles):
+    imshow = ax.imshow(im, extent=[2/x_min, 2/x_max, 2/x_min, 2/x_max])
+    ax.set_title(f"Imag(MTF) {title}")
+    ax.set_xlabel(r"$D/\lambda$")
+    ax.set_ylabel(r"$D/\lambda$")
+    plt.colorbar(imshow, ax=ax, fraction=0.046, pad=0.04)#, vmin=-0.11,vmax=0.11)
+    imshow.set_clim(-0.11, 0.11)
+plt.tight_layout()
+plt.show()
+
+
+#%%
+
+plt.figure()
+plt.imshow(np.abs(otf_atmo_filtr),norm=colors.LogNorm(),extent=[2/x_min,2/x_max,2/x_min,2/x_max])
+plt.title("MTF atmosphérique (abs(MTF))")
+plt.xlabel(r"$D/\lambda$")
+plt.ylabel(r"$D/\lambda$")
+plt.colorbar()
+
+plt.figure()
+plt.imshow((otf_atmo_filtr.real),norm=colors.LogNorm(),extent=[2/x_min,2/x_max,2/x_min,2/x_max])
+plt.title("MTF atmosphérique (real(MTF))")
+plt.xlabel(r"$D/\lambda$")
+plt.ylabel(r"$D/\lambda$")
+plt.colorbar()
+
+plt.figure()
+plt.imshow((otf_atmo_filtr.imag),extent=[2/x_min,2/x_max,2/x_min,2/x_max])
+plt.title("MTF atmosphérique (imag(MTF))")
+plt.xlabel(r"$D/\lambda$")
+plt.ylabel(r"$D/\lambda$")
+plt.colorbar()
+
+plt.figure()
+plt.title("Moyenne azimutal de la MTF atmosphérique (real(MTF))")
+plt.xlabel(r"$D/\lambda$")
+plt.ylabel("u.a. (MTF non normalisé)")
+plt.semilogy(np.linspace(0,2/x_max,nbr_pix//2),AZAV((otf_atmo_filtr).real,owa,1)[0])
+plt.show()
+
+
+#! affichage de l'azav
+plt.figure()
+#azav_mtf = AZAV(mtf_atmo, owa, 1)[0]
+plt.title("Moyenne azimutal de la MTF atmosphérique")
+plt.xlabel(r"$D/\lambda$")
+plt.ylabel("u.a. (MTF non normalisé)")
+plt.semilogy(np.linspace(0,2/x_max,nbr_pix//2),AZAV(np.abs(otf_atmo_filtr),owa,1)[0],label="Valeur absolue")
+plt.semilogy(np.linspace(0,2/x_max,nbr_pix//2),AZAV((otf_atmo_filtr).real,owa,1)[0],label="Partie réelle")
+plt.legend()
+plt.show()
+
+plt.figure()
+plt.semilogy(np.linspace(0,2/x_max,nbr_pix//2),AZAV(np.abs(otf_atmo_filtr),owa,1)[0]-AZAV((otf_atmo_filtr).real,owa,1)[0])
+plt.title("Différence entre les moyennes azimutal\nde la valeur absolue et la partie réelle de la MTF atmosphérique")
 
 #%%
 def OTF2PSF(otf_atmo,psf_tel): # en remplacement de DSP2PSF
     # ! pour l'instant on suppose que otf_atmo = mtf_atmo
-    psf_rec = mtf_atmo*np.abs(ft_BASIC(psf_tel,fov,2,nbr_pix,direction=1))
-    plt.figure()
-    plt.imshow(psf_rec/psf_rec.max(),norm=colors.LogNorm())
-    plt.colorbar()
-    plt.title("PSF reconstruite")
+    otf_rec = otf_atmo*ft_BASIC(psf_tel,fov,2,nbr_pix,direction=1)
+    psf_rec = np.abs(ft_BASIC(otf_rec, 2,fov,nbr_pix,direction=1))
+    return psf_rec
     
-test = OTF2PSF(otf_atmo,psf_tel)
+mtf_atmo_filtr_2000 = np.abs(otf_atmo_filtr_2000)
+plt.figure()
+plt.imshow(mtf_atmo_filtr_2000, norm=colors.LogNorm())
+plt.colorbar()
+plt.title("MTF atmosphérique (2s d'OA)")
+#%%
+
+apod = Aperture('HSP2')
+psf_apod = PSF_utils(apod,fov,nbr_pix).PSF()
+
+#%%
+#!!!!!
+# Open the FITS file and read the MTF data
+with fits.open('mtf_atmo_filtr_dod_2000_apod.fits') as hdul:
+    mtf_atm = hdul[0].data
+
+psf_rec = OTF2PSF(mtf_atm, psf_apod)
+plt.figure()
+plt.imshow(psf_rec/psf_rec.max(),norm=colors.LogNorm(vmin=1e-6))
+plt.colorbar()
+plt.title("PSF reconstruite")
+#!!!!!
+
+
+#%%
+plt.figure()
+plt.imshow(psf_LP/psf_LP.max(), norm=colors.LogNorm(vmin=1e-6))
+plt.title("PSF longue pose")
+
+plt.colorbar()
+
+plt.figure()
+plt.imshow(psf_apod/psf_apod.max(), norm=colors.LogNorm(vmin=1e-6))
+plt.title("PSF coronographique")
+plt.colorbar()
+#%%
+half_psf_rec = psf_rec[:nbr_pix//2,:]
+half_psf_LP = psf_LP[nbr_pix//2:,:]
+matrix_compar = np.zeros((nbr_pix, nbr_pix))
+matrix_compar[:nbr_pix//2]=half_psf_rec
+matrix_compar[nbr_pix//2:]=half_psf_LP 
+
+plt.figure()
+plt.imshow(matrix_compar,norm=colors.LogNorm(vmin=1e-8))
+
+
+#%%
+half_psf_rec = psf_rec#[:nbr_pix//2,:]
+half_psf_LP = psf_LP#[:nbr_pix//2,:]
+matrix_diff = np.zeros((nbr_pix//2, nbr_pix))
+matrix_diff=half_psf_rec/half_psf_rec.max() - half_psf_LP/half_psf_LP.max()
+
+plt.figure()
+plt.imshow(matrix_diff,norm=colors.LogNorm(vmin=1e-8))
+plt.colorbar()
+plt.title("Différence entre les deux PSF (rec - LP)")
+# ! essayer de bien interpreter la différence entre les deux PSF
 
 #%%
 # plt.figure()
