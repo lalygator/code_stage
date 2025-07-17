@@ -120,7 +120,7 @@ class PSF_utils:
         return self.psf
 
 # * Choix de la pupille
-aper = Aperture('HSP2')
+aper = Aperture('ELT')
 
 # * Choix des paramètres
 owa = 38 # OWA de l'apodiseur considéré
@@ -131,11 +131,16 @@ M = 2000 # temps d'OA considéré, en ms #//1min pour faire 1500 avec np multipl
 psf_LP = PSF_utils(aper,fov,nbr_pix,M).PSF()
 psf_tel = PSF_utils(aper,fov,nbr_pix).PSF()
 #%%
+# ! PSF longue pose pour différents temps de pose
 psf_LP_500 = PSF_utils(aper,fov,nbr_pix,500).PSF()
 psf_LP_1000 = PSF_utils(aper,fov,nbr_pix,1000).PSF()
 psf_LP_1500 = PSF_utils(aper,fov,nbr_pix,1500).PSF()
 psf_LP_2000 = psf_LP#PSF_utils(aper,fov,nbr_pix,2000).PSF()
-fits.writeto('psf_LP_2000_HSP2.fits', psf_LP_2000, overwrite=True)
+#%%
+fits.writeto('psf_LP_500_ELT_38.fits', psf_LP_500)#, overwrite=True)
+fits.writeto('psf_LP_1000_ELT_38.fits', psf_LP_1000)#, overwrite=True)
+fits.writeto('psf_LP_1500_ELT_38.fits', psf_LP_1500)#, overwrite=True)
+fits.writeto('psf_LP_2000_ELT_38.fits', psf_LP_2000)#, overwrite=True)
 
 
 #%%
@@ -418,7 +423,7 @@ plt.ylabel(r'$\lambda/D$')
 plt.show()
 #%%
 
-#! Calcul de l'OTF et application d'un masque
+#! Calcul de l'OTF et application d'un masque circulaire
 
 otf_atmo_500 = ft_BASIC(psf_LP_500,fov, 2,nbr_pix,direction=-1)/ft_BASIC(psf_tel,fov,2,nbr_pix,direction=-1)
 otf_atmo_1000 = ft_BASIC(psf_LP_1000,fov, 2,nbr_pix,direction=-1)/ft_BASIC(psf_tel,fov,2,nbr_pix,direction=-1)
@@ -431,6 +436,7 @@ grid_x, grid_y = np.meshgrid(np.linspace(-R, R, nbr_pix), np.linspace(-R, R, nbr
 mask = np.sqrt(grid_x**2+grid_y**2) <= 1
 
 #%%
+# ! masque polygone, de N côté
 def n(x,y,N):
     m = 0
     for k in range(0,N):
@@ -439,7 +445,7 @@ def n(x,y,N):
             m=v
     return m
 n = np.vectorize(n)
-grid_x,grid_y = np.meshgrid(np.linspace(-1000/964,1000/964,1900),np.linspace(-1000/964,1000/964,1900))
+grid_x,grid_y = np.meshgrid(np.linspace(-1000/964,1000/964,nbr_pix),np.linspace(-1000/964,1000/964,nbr_pix))
 boule = n(grid_x,grid_y,12) <= 1
 
 plt.imshow(boule)
@@ -450,8 +456,8 @@ otf_atmo_filtr_1500 = otf_atmo_1500*mask
 otf_atmo_filtr_2000 = otf_atmo_2000*boule
 
 
-fits.writeto('mtf_atmo_filtr_dod_2000_apod.fits', otf_atmo_filtr_2000, overwrite=True)
-fits.writeto('mtf_atmo_2000_apod.fits', otf_atmo_2000, overwrite=True)
+fits.writeto('fits/mtf/mtf_atmo_filtr_dod_2000_38.fits', otf_atmo_filtr_2000, overwrite=True)
+fits.writeto('mtf_atmo_2000_38.fits', otf_atmo_2000, overwrite=True)
 
 
 
@@ -570,29 +576,51 @@ apod = Aperture('HSP2')
 psf_apod = PSF_utils(apod,fov,nbr_pix).PSF()
 
 #%%
-#!!!!!
-# Open the FITS file and read the MTF data
-with fits.open('mtf_atmo_filtr_dod_2000_apod.fits') as hdul:
+#!!!!! PSF recréée
+
+with fits.open('fits/mtf/mtf_atmo_filtr_2000_apod.fits') as hdul:
     mtf_atm = hdul[0].data
 
-psf_rec = OTF2PSF(mtf_atm, psf_apod)
 plt.figure()
-plt.imshow(psf_rec/psf_rec.max(),norm=colors.LogNorm(vmin=1e-6))
+plt.imshow(mtf_atm)#, norm=colors.LogNorm(vmax=1))
+plt.title("MTF atmosphérique considéré")
 plt.colorbar()
-plt.title("PSF reconstruite")
+
+psf_rec = OTF2PSF(mtf_atm, psf_tel)
+plt.figure()
+plt.imshow(psf_rec/psf_rec.max(),norm=colors.LogNorm(vmin=1e-6),extent=[x_min,x_max,x_min,x_max])
+plt.xlabel(r"$\lambda/D$")
+plt.ylabel(r"$\lambda/D$")
+plt.colorbar()
+plt.title("PSF reconstruite (ELT - MTF HSP2 - 2000ms)")
 #!!!!!
+#%%
+#!!!!! différence entre la psf reconstruire et la longue pose
+plt.figure()
+with fits.open('psf/psf_LP_2000_ELT_38.fits') as hdul:
+    psf = hdul[0].data
+plt.imshow(psf_rec/psf_rec.max()-psf/psf.max(),norm=colors.LogNorm(vmin=1e-8),extent=[x_min,x_max,x_min,x_max])
+plt.xlabel(r"$\lambda/D$")
+plt.ylabel(r"$\lambda/D$")
+plt.colorbar()
+plt.title("Différence entre la PSF reconstruite\net la PSF longue pose (HSP2 - MTF ELT 38 - 2000ms)")
 
 
 #%%
+#!!!!! PSF longue pose
 plt.figure()
-plt.imshow(psf_LP/psf_LP.max(), norm=colors.LogNorm(vmin=1e-6))
-plt.title("PSF longue pose")
-
+plt.imshow(psf_LP/psf_LP.max(), norm=colors.LogNorm(vmin=1e-6),extent=[x_min,x_max,x_min,x_max])
+plt.title("PSF longue pose (ELT 38 - 2000ms)")
+plt.xlabel(r"$\lambda/D$")
+plt.ylabel(r"$\lambda/D$")
 plt.colorbar()
 
+#!!!!! PSF coronographique
 plt.figure()
-plt.imshow(psf_apod/psf_apod.max(), norm=colors.LogNorm(vmin=1e-6))
-plt.title("PSF coronographique")
+plt.imshow(psf_apod/psf_apod.max(), norm=colors.LogNorm(vmin=1e-6),extent=[x_min,x_max,x_min,x_max])
+plt.xlabel(r"$\lambda/D$")
+plt.ylabel(r"$\lambda/D$")
+plt.title("PSF coronographique (ELT 38)")
 plt.colorbar()
 #%%
 half_psf_rec = psf_rec[:nbr_pix//2,:]
