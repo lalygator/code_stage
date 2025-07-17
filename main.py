@@ -121,7 +121,6 @@ class PSF_utils:
 
 # * Choix de la pupille
 aper = Aperture('ELT')
-
 # * Choix des paramètres
 owa = 38 # OWA de l'apodiseur considéré
 N = 2 # résolution, valeur minimale pour etre a Nyquist
@@ -159,6 +158,14 @@ plt.ylabel(r"$\lambda/D$")
 plt.title('PSF longue pose')
 plt.show()
 
+plt.figure()
+plt.imshow(psf_aper/psf_aper.max(), norm=colors.LogNorm(vmin=1e-6),extent=[x_min,x_max,x_min,x_max])
+plt.colorbar()
+plt.xlabel(r"$\lambda/D$")
+plt.xticks(rotation=45, ha="right")
+plt.ylabel(r"$\lambda/D$")
+plt.title('PSF coronographique')
+plt.show()
 #%%
 class OTF:
     def __init__(self, psf):
@@ -446,17 +453,18 @@ def n(x,y,N):
     return m
 n = np.vectorize(n)
 grid_x,grid_y = np.meshgrid(np.linspace(-1000/964,1000/964,nbr_pix),np.linspace(-1000/964,1000/964,nbr_pix))
-boule = n(grid_x,grid_y,12) <= 1
+poly = n(grid_x,grid_y,12) <= 1
 
-plt.imshow(boule)
+plt.imshow(poly)
 #%%
 otf_atmo_filtr_500 = otf_atmo_500*mask
 otf_atmo_filtr_1000 = otf_atmo_1000*mask
 otf_atmo_filtr_1500 = otf_atmo_1500*mask
-otf_atmo_filtr_2000 = otf_atmo_2000*boule
+otf_atmo_filtr_2000 = otf_atmo_2000*mask
+otf_atmo_filtr_dod_2000 = otf_atmo_2000*poly
 
 
-fits.writeto('fits/mtf/mtf_atmo_filtr_dod_2000_38.fits', otf_atmo_filtr_2000, overwrite=True)
+fits.writeto('fits/MTF/mtf_atmo_filtr_dod_2000_38.fits', otf_atmo_filtr_2000, overwrite=True)
 fits.writeto('mtf_atmo_2000_38.fits', otf_atmo_2000, overwrite=True)
 
 
@@ -578,49 +586,62 @@ psf_apod = PSF_utils(apod,fov,nbr_pix).PSF()
 #%%
 #!!!!! PSF recréée
 
-with fits.open('fits/mtf/mtf_atmo_filtr_2000_apod.fits') as hdul:
-    mtf_atm = hdul[0].data
+choix_MTF = "HSP2_circ" #HSP2_circ, #HSP2_dod, #MTF_ELT, #MTF_ELT_20_
+choix_aper = "HSP2" #ELT #ELT_20
 
-plt.figure()
-plt.imshow(mtf_atm)#, norm=colors.LogNorm(vmax=1))
-plt.title("MTF atmosphérique considéré")
-plt.colorbar()
+if choix_aper == "ELT":
+    aper = psf_tel
+else:
+    aper = psf_apod
 
-psf_rec = OTF2PSF(mtf_atm, psf_tel)
+with fits.open(f'fits/MTF/MTF_{choix_MTF}.fits') as hdul:
+    MTF = hdul[0].data
+
+fig, ax = plt.subplots()
+imshow = ax.imshow(MTF,extent=[2/x_min,2/x_max,2/x_min,2/x_max])#, norm=colors.LogNorm(vmax=1))
+imshow.set_clim(vmin=0.7, vmax=0.9)
+plt.title(f"MTF atmosphérique considéré : {choix_MTF}")
+plt.xlabel(r"$D/\lambda$")
+plt.ylabel(r"$D/\lambda$")
+plt.colorbar(imshow, ax=ax)
+
+
+psf_rec = OTF2PSF(MTF, aper)
 plt.figure()
-plt.imshow(psf_rec/psf_rec.max(),norm=colors.LogNorm(vmin=1e-6),extent=[x_min,x_max,x_min,x_max])
+plt.imshow(psf_rec/psf_rec.max(),norm=colors.LogNorm(vmin=1e-8),extent=[x_min,x_max,x_min,x_max])
 plt.xlabel(r"$\lambda/D$")
 plt.ylabel(r"$\lambda/D$")
 plt.colorbar()
-plt.title("PSF reconstruite (ELT - MTF HSP2 - 2000ms)")
+plt.title(f"PSF reconstruite (APER : {choix_aper} - MTF : {choix_MTF})")
 #!!!!!
 #%%
 #!!!!! différence entre la psf reconstruire et la longue pose
 plt.figure()
-with fits.open('psf/psf_LP_2000_ELT_38.fits') as hdul:
+with fits.open(f'fits/PSF/PSF_2000_{choix_aper}.fits') as hdul:
     psf = hdul[0].data
+
 plt.imshow(psf_rec/psf_rec.max()-psf/psf.max(),norm=colors.LogNorm(vmin=1e-8),extent=[x_min,x_max,x_min,x_max])
 plt.xlabel(r"$\lambda/D$")
 plt.ylabel(r"$\lambda/D$")
 plt.colorbar()
-plt.title("Différence entre la PSF reconstruite\net la PSF longue pose (HSP2 - MTF ELT 38 - 2000ms)")
+plt.title(f"Différence entre la PSF reconstruite\net la PSF longue pose (APER : {choix_aper} - MTF : {choix_MTF})")
 
 
 #%%
 #!!!!! PSF longue pose
 plt.figure()
-plt.imshow(psf_LP/psf_LP.max(), norm=colors.LogNorm(vmin=1e-6),extent=[x_min,x_max,x_min,x_max])
-plt.title("PSF longue pose (ELT 38 - 2000ms)")
+plt.imshow(psf/psf.max(), norm=colors.LogNorm(vmin=1e-8),extent=[x_min,x_max,x_min,x_max])
+plt.title(f"PSF longue pose ({choix_aper})")
 plt.xlabel(r"$\lambda/D$")
 plt.ylabel(r"$\lambda/D$")
 plt.colorbar()
 
 #!!!!! PSF coronographique
 plt.figure()
-plt.imshow(psf_apod/psf_apod.max(), norm=colors.LogNorm(vmin=1e-6),extent=[x_min,x_max,x_min,x_max])
+plt.imshow(aper/aper.max(), norm=colors.LogNorm(vmin=1e-8),extent=[x_min,x_max,x_min,x_max])
 plt.xlabel(r"$\lambda/D$")
 plt.ylabel(r"$\lambda/D$")
-plt.title("PSF coronographique (ELT 38)")
+plt.title(f"PSF coronographique ({choix_aper})")
 plt.colorbar()
 #%%
 half_psf_rec = psf_rec[:nbr_pix//2,:]
@@ -646,21 +667,3 @@ plt.title("Différence entre les deux PSF (rec - LP)")
 # ! essayer de bien interpreter la différence entre les deux PSF
 
 #%%
-# plt.figure()
-# test = pitie - psf_tel
-# plt.imshow(test,norm=colors.LogNorm())
-
-# outil pour PSF
-# - aclul de la psf
-# - azav
-# - affichage
-
-# outils pour OTF
-# - aclul de l'otf
-# - azav
-# - affichage
-
-# outils pour DSP
-# - calcul de dsp
-# - verification de la PSF retrived de la dsp
-# - affichage
