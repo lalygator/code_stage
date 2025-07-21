@@ -136,10 +136,10 @@ psf_LP_1000 = PSF_utils(aper,fov,nbr_pix,1000).PSF()
 psf_LP_1500 = PSF_utils(aper,fov,nbr_pix,1500).PSF()
 psf_LP_2000 = psf_LP#PSF_utils(aper,fov,nbr_pix,2000).PSF()
 #%%
-fits.writeto('psf_LP_500_ELT_8.fits', psf_LP_500)#, overwrite=True)
-fits.writeto('psf_LP_1000_ELT_8.fits', psf_LP_1000)#, overwrite=True)
-fits.writeto('psf_LP_1500_ELT_8.fits', psf_LP_1500)#, overwrite=True)
-fits.writeto('psf_LP_2000_ELT_8.fits', psf_LP_2000)#, overwrite=True)
+fits.writeto('PSF_500_ELT_8.fits', psf_LP_500)#, overwrite=True)
+fits.writeto('PSF_1000_ELT_8.fits', psf_LP_1000)#, overwrite=True)
+fits.writeto('PSF_1500_ELT_8.fits', psf_LP_1500)#, overwrite=True)
+fits.writeto('PSF_2000_ELT_8.fits', psf_LP_2000)#, overwrite=True)
 
 
 #%%
@@ -431,7 +431,7 @@ plt.show()
 #%%
 
 #! Calcul de l'OTF et application d'un masque circulaire
-apod = Aperture('ELT')
+apod = Aperture('HSP2')
 psf_apod = PSF_utils(apod,fov,nbr_pix).PSF()
 
 with fits.open(f'fits/PSF/PSF_500_ELT_8.fits') as hdul:
@@ -479,13 +479,9 @@ otf_atmo_filtr_dod_1500 = otf_atmo_1500*poly
 otf_atmo_filtr_dod_2000 = otf_atmo_2000*poly
 
 #%%
-
-
 fits.writeto('fits/MTF/MTF_ELT_8.fits', otf_atmo_2000)
 fits.writeto('fits/MTF/MTF_ELT_8_circ.fits', otf_atmo_filtr_2000)
 fits.writeto('fits/MTF/MTF_ELT_8_dod.fits', otf_atmo_filtr_dod_2000)
-
-
 #%%
 plt.figure()
 plt.imshow(np.abs(otf_atmo_2000),norm=colors.LogNorm())
@@ -599,10 +595,10 @@ def OTF2PSF(otf_atmo,psf_tel): # en remplacement de DSP2PSF
 # ! Recréation de la PSF à partir d'une ouverture et d'une MTF atmosphérique
 
 choix_MTF = "ELT_8_circ" #HSP2_circ, #HSP2_dod, #MTF_ELT, #MTF_ELT_20_
-choix_aper = "ELT" #ELT #ELT_20
+choix_aper = "ELT_8" #ELT #ELT_20
 
 # * Permet de calculer correctement la PSF longue pose par les deux MTF
-if choix_aper == "ELT":
+if choix_aper == "ELT_8":
     aper = psf_tel
 else:
     aper = psf_apod
@@ -655,17 +651,28 @@ plt.title(f"PSF reconstruite (APER : {choix_aper} - MTF : {choix_MTF})")
 # ! Différence entre la PSF reconstruite et la PSF longue pose
 
 # * Ouverture de la PSF longue pose associé à l'ouverture
-plt.figure()
+
 with fits.open(f'fits/PSF/PSF_2000_{choix_aper}.fits') as hdul:
     psf = hdul[0].data
 
 # * Affichage de la différence entre les PSF
+# plt.figure()
+# plt.imshow(psf_rec/psf_rec.max()-psf/psf.max(),norm=colors.LogNorm(vmin=1e-8),extent=[x_min,x_max,x_min,x_max])
+# plt.xlabel(r"$\lambda/D$")
+# plt.ylabel(r"$\lambda/D$")
+# plt.colorbar()
+# plt.title(f"Différence entre la PSF reconstruite\net la PSF longue pose (APER : {choix_aper} - MTF : {choix_MTF})")
+
+azav_rec = AZAV(psf_rec/psf_rec.max(), owa, 1)[0]
+azav_ini = AZAV(psf/psf.max(), owa, 1)[0]
+
 plt.figure()
-plt.imshow(psf_rec/psf_rec.max()-psf/psf.max(),norm=colors.LogNorm(vmin=1e-8),extent=[x_min,x_max,x_min,x_max])
+plt.semilogy(np.linspace(0,x_max,nbr_pix//2),azav_rec, label='AZAV PSF reconstruite')
+plt.semilogy(np.linspace(0,x_max,nbr_pix//2),azav_ini, label='AZAV PSF longue pose')
 plt.xlabel(r"$\lambda/D$")
-plt.ylabel(r"$\lambda/D$")
-plt.colorbar()
-plt.title(f"Différence entre la PSF reconstruite\net la PSF longue pose (APER : {choix_aper} - MTF : {choix_MTF})")
+plt.ylabel("Contraste")
+plt.legend()
+plt.title("Comparaison des AZAV des PSF reconstruite et LP")
 
 
 #%%
