@@ -28,7 +28,7 @@ class Aperture:
         if self.mat is None:
             match self.name :
                 case 'ELT':
-                    self.mat = SQ(np.fromfile(f'./ELT_1132_M1=2_M4=4_ROT=5.dat', dtype=float, sep='\n').reshape((566, 566)))
+                    self.mat = SQ(np.fromfile(f'./ELT_1132_M1=2_M4=4_ROT=5.dat', dtype=float, sep='\n').reshape((566, 566)))            
                 case 'HSP1' | 'HSP2':
                     fits_file = f'./{self.name}.fits'
                     with fits.open(fits_file) as hdul:
@@ -122,9 +122,9 @@ class PSF_utils:
 # * Choix de la pupille
 aper = Aperture('ELT')
 # * Choix des paramètres
-owa = 38 # OWA de l'apodiseur considéré
-N = 2 # résolution, valeur minimale pour etre a Nyquist
-fov = int(5*2.5*owa) # champ de vue de la psf
+owa = 8 # OWA de l'apodiseur considéré
+N = 1 # résolution, valeur minimale pour etre a Nyquist
+fov = int(2*owa) # champ de vue de la psf
 nbr_pix = int(N * 2 * fov) # nombre de pixels, minimum 2 par lambda/D pour Nyquist à N=1
 M = 2000 # temps d'OA considéré, en ms #//1min pour faire 1500 avec np multiply
 psf_LP = PSF_utils(aper,fov,nbr_pix,M).PSF()
@@ -136,10 +136,10 @@ psf_LP_1000 = PSF_utils(aper,fov,nbr_pix,1000).PSF()
 psf_LP_1500 = PSF_utils(aper,fov,nbr_pix,1500).PSF()
 psf_LP_2000 = psf_LP#PSF_utils(aper,fov,nbr_pix,2000).PSF()
 #%%
-fits.writeto('psf_LP_500_ELT_38.fits', psf_LP_500)#, overwrite=True)
-fits.writeto('psf_LP_1000_ELT_38.fits', psf_LP_1000)#, overwrite=True)
-fits.writeto('psf_LP_1500_ELT_38.fits', psf_LP_1500)#, overwrite=True)
-fits.writeto('psf_LP_2000_ELT_38.fits', psf_LP_2000)#, overwrite=True)
+fits.writeto('psf_LP_500_ELT_8.fits', psf_LP_500)#, overwrite=True)
+fits.writeto('psf_LP_1000_ELT_8.fits', psf_LP_1000)#, overwrite=True)
+fits.writeto('psf_LP_1500_ELT_8.fits', psf_LP_1500)#, overwrite=True)
+fits.writeto('psf_LP_2000_ELT_8.fits', psf_LP_2000)#, overwrite=True)
 
 
 #%%
@@ -431,6 +431,18 @@ plt.show()
 #%%
 
 #! Calcul de l'OTF et application d'un masque circulaire
+apod = Aperture('ELT')
+psf_apod = PSF_utils(apod,fov,nbr_pix).PSF()
+
+with fits.open(f'fits/PSF/PSF_500_ELT_8.fits') as hdul:
+    psf_LP_500 = hdul[0].data
+with fits.open(f'fits/PSF/PSF_1000_ELT_8.fits') as hdul:
+    psf_LP_1000 = hdul[0].data
+with fits.open(f'fits/PSF/PSF_1500_ELT_8.fits') as hdul:
+    psf_LP_1500 = hdul[0].data
+with fits.open(f'fits/PSF/PSF_2000_ELT_8.fits') as hdul:
+    psf_LP = hdul[0].data
+
 
 otf_atmo_500 = ft_BASIC(psf_LP_500,fov, 2,nbr_pix,direction=-1)/ft_BASIC(psf_tel,fov,2,nbr_pix,direction=-1)
 otf_atmo_1000 = ft_BASIC(psf_LP_1000,fov, 2,nbr_pix,direction=-1)/ft_BASIC(psf_tel,fov,2,nbr_pix,direction=-1)
@@ -461,13 +473,17 @@ otf_atmo_filtr_500 = otf_atmo_500*mask
 otf_atmo_filtr_1000 = otf_atmo_1000*mask
 otf_atmo_filtr_1500 = otf_atmo_1500*mask
 otf_atmo_filtr_2000 = otf_atmo_2000*mask
+otf_atmo_filtr_dod_500 = otf_atmo_500*poly
+otf_atmo_filtr_dod_1000 = otf_atmo_1000*poly
+otf_atmo_filtr_dod_1500 = otf_atmo_1500*poly
 otf_atmo_filtr_dod_2000 = otf_atmo_2000*poly
 
-
-fits.writeto('fits/MTF/mtf_atmo_filtr_dod_2000_38.fits', otf_atmo_filtr_2000, overwrite=True)
-fits.writeto('mtf_atmo_2000_38.fits', otf_atmo_2000, overwrite=True)
+#%%
 
 
+fits.writeto('fits/MTF/MTF_ELT_8.fits', otf_atmo_2000)
+fits.writeto('fits/MTF/MTF_ELT_8_circ.fits', otf_atmo_filtr_2000)
+fits.writeto('fits/MTF/MTF_ELT_8_dod.fits', otf_atmo_filtr_dod_2000)
 
 
 #%%
@@ -572,23 +588,20 @@ def OTF2PSF(otf_atmo,psf_tel): # en remplacement de DSP2PSF
     otf_rec = otf_atmo*ft_BASIC(psf_tel,fov,2,nbr_pix,direction=1)
     psf_rec = np.abs(ft_BASIC(otf_rec, 2,fov,nbr_pix,direction=1))
     return psf_rec
-    
-mtf_atmo_filtr_2000 = np.abs(otf_atmo_filtr_2000)
-plt.figure()
-plt.imshow(mtf_atmo_filtr_2000, norm=colors.LogNorm())
-plt.colorbar()
-plt.title("MTF atmosphérique (2s d'OA)")
 #%%
-
-apod = Aperture('HSP2')
-psf_apod = PSF_utils(apod,fov,nbr_pix).PSF()
+# mtf_atmo_filtr_2000 = np.abs(otf_atmo_filtr_2000)
+# plt.figure()
+# plt.imshow(mtf_atmo_filtr_2000, norm=colors.LogNorm())
+# plt.colorbar()
+# plt.title("MTF atmosphérique (2s d'OA)")
 
 #%%
-#!!!!! PSF recréée
+# ! Recréation de la PSF à partir d'une ouverture et d'une MTF atmosphérique
 
-choix_MTF = "HSP2_circ" #HSP2_circ, #HSP2_dod, #MTF_ELT, #MTF_ELT_20_
-choix_aper = "HSP2" #ELT #ELT_20
+choix_MTF = "ELT_8_circ" #HSP2_circ, #HSP2_dod, #MTF_ELT, #MTF_ELT_20_
+choix_aper = "ELT" #ELT #ELT_20
 
+# * Permet de calculer correctement la PSF longue pose par les deux MTF
 if choix_aper == "ELT":
     aper = psf_tel
 else:
@@ -597,29 +610,57 @@ else:
 with fits.open(f'fits/MTF/MTF_{choix_MTF}.fits') as hdul:
     MTF = hdul[0].data
 
+
+#%%
+# TODO Faire le découpage du quart en bas à droite de la MTF
+quad_MTF = MTF[nbr_pix//2:, nbr_pix//2:]
+
+# * Permet d'afficher le quadrant de MTF considéré
+plt.figure()
+plt.imshow(quad_MTF,norm=colors.LogNorm(vmin=0.7,vmax=0.9))
+plt.title("Quadrant de la MTF utilisé pour AMPL")
+plt.show()
+
+#%%
+with open(f"AMPL/quad_MTF_{choix_MTF}.dat","w") as file:
+    quad_MTF_txt = np.array2string(quad_MTF)
+    file.write(quad_MTF_txt)
+    file.close()
+#%%
+fits.writeto(f"quad_MTF_{choix_MTF}.fits", quad_MTF, overwrite=True)
+
+
+#%%
+
+# * Permet d'afficher la MTF atmosphérique utilisée
 fig, ax = plt.subplots()
-imshow = ax.imshow(MTF,extent=[2/x_min,2/x_max,2/x_min,2/x_max])#, norm=colors.LogNorm(vmax=1))
-imshow.set_clim(vmin=0.7, vmax=0.9)
+imshow = ax.imshow(MTF,extent=[2/x_min,2/x_max,2/x_min,2/x_max])
+imshow.set_clim(vmin=0.7, vmax=0.9) # * limitaton de la colorbar pour correctement voir l'intérieur
 plt.title(f"MTF atmosphérique considéré : {choix_MTF}")
 plt.xlabel(r"$D/\lambda$")
 plt.ylabel(r"$D/\lambda$")
 plt.colorbar(imshow, ax=ax)
 
-
+# * Permet de calculer la PSF reconstruite à partir des deux MTF
 psf_rec = OTF2PSF(MTF, aper)
+
 plt.figure()
 plt.imshow(psf_rec/psf_rec.max(),norm=colors.LogNorm(vmin=1e-8),extent=[x_min,x_max,x_min,x_max])
 plt.xlabel(r"$\lambda/D$")
 plt.ylabel(r"$\lambda/D$")
 plt.colorbar()
-plt.title(f"PSF reconstruite (APER : {choix_aper} - MTF : {choix_MTF})")
-#!!!!!
+plt.title(f"PSF reconstruite (APER : {choix_aper} - MTF : {choix_MTF})")
+
 #%%
-#!!!!! différence entre la psf reconstruire et la longue pose
+# ! Différence entre la PSF reconstruite et la PSF longue pose
+
+# * Ouverture de la PSF longue pose associé à l'ouverture
 plt.figure()
 with fits.open(f'fits/PSF/PSF_2000_{choix_aper}.fits') as hdul:
     psf = hdul[0].data
 
+# * Affichage de la différence entre les PSF
+plt.figure()
 plt.imshow(psf_rec/psf_rec.max()-psf/psf.max(),norm=colors.LogNorm(vmin=1e-8),extent=[x_min,x_max,x_min,x_max])
 plt.xlabel(r"$\lambda/D$")
 plt.ylabel(r"$\lambda/D$")
@@ -628,7 +669,9 @@ plt.title(f"Différence entre la PSF reconstruite\net la PSF longue pose (APER :
 
 
 #%%
-#!!!!! PSF longue pose
+# ! Affichage de la PSF longue pose et la PSF coronographique associé à l'ouverture 
+
+# * PSF longue pose
 plt.figure()
 plt.imshow(psf/psf.max(), norm=colors.LogNorm(vmin=1e-8),extent=[x_min,x_max,x_min,x_max])
 plt.title(f"PSF longue pose ({choix_aper})")
@@ -636,7 +679,7 @@ plt.xlabel(r"$\lambda/D$")
 plt.ylabel(r"$\lambda/D$")
 plt.colorbar()
 
-#!!!!! PSF coronographique
+# * PSF coronographique
 plt.figure()
 plt.imshow(aper/aper.max(), norm=colors.LogNorm(vmin=1e-8),extent=[x_min,x_max,x_min,x_max])
 plt.xlabel(r"$\lambda/D$")
