@@ -58,10 +58,11 @@ class Aperture:
         plt.show()
 
 class PSF_utils:
-    def __init__(self, aperture, fov, N, OAtime=None,norm=False):
+    def __init__(self, aperture, fov, N, z, OAtime=None,norm=False):
         self.aperture = aperture
         self.fov = fov # champ de vue observée totale
         self.N = N # nombre de pixel
+        self.z = z
         self.OAtime = OAtime
         self.norm = norm
         self.psf = None
@@ -111,7 +112,9 @@ class PSF_utils:
                 A = np.multiply(phase,mat)
                 im = np.zeros((m,self.N,self.N)) # allocation initial de la mémoire pour le calcul
                 for i, A_i in enumerate(A):
-                    im[i,:,:] = (ft_BASIC(A_i, 1132 / 1024, self.fov, self.N, direction=1).real)**2
+                    print(i)
+                    if i%z == 0 :
+                        im[i,:,:] = (ft_BASIC(A_i, 1132 / 1024, self.fov, self.N, direction=1).real)**2
                     #print(f'Image {i} fini')
                 psf = np.mean(im, axis=0)
                 self.psf = psf
@@ -123,12 +126,13 @@ class PSF_utils:
 aper = Aperture('ELT')
 # * Choix des paramètres
 owa = 8 # OWA de l'apodiseur considéré
-N = 1 # résolution, valeur minimale pour etre a Nyquist
+N = 2 # résolution, valeur minimale pour etre a Nyquist
 fov = int(2*owa) # champ de vue de la psf
 nbr_pix = int(N * 2 * fov) # nombre de pixels, minimum 2 par lambda/D pour Nyquist à N=1
 M = 2000 # temps d'OA considéré, en ms #//1min pour faire 1500 avec np multiply
-psf_LP = PSF_utils(aper,fov,nbr_pix,M).PSF()
-psf_tel = PSF_utils(aper,fov,nbr_pix).PSF()
+z = 10
+psf_LP = PSF_utils(aper,fov,nbr_pix,z,M).PSF()
+#psf_tel = PSF_utils(aper,fov,nbr_pix).PSF()
 #%%
 # ! PSF longue pose pour différents temps de pose
 psf_LP_500 = PSF_utils(aper,fov,nbr_pix,500).PSF()
@@ -155,9 +159,9 @@ plt.colorbar()
 plt.xlabel(r"$\lambda/D$")
 plt.xticks(rotation=45, ha="right")
 plt.ylabel(r"$\lambda/D$")
-plt.title('PSF longue pose')
+plt.title(f'PSF longue pose pour une image toutes les {z} ms \n soit {M/z} images')
 plt.show()
-
+#%%
 plt.figure()
 plt.imshow(psf_aper/psf_aper.max(), norm=colors.LogNorm(vmin=1e-6),extent=[x_min,x_max,x_min,x_max])
 plt.colorbar()
@@ -447,12 +451,12 @@ with fits.open(f'fits/PSF/PSF_2000_ELT_8.fits') as hdul:
 otf_atmo_500 = ft_BASIC(psf_LP_500,fov, 2,nbr_pix,direction=-1)/ft_BASIC(psf_tel,fov,2,nbr_pix,direction=-1)
 otf_atmo_1000 = ft_BASIC(psf_LP_1000,fov, 2,nbr_pix,direction=-1)/ft_BASIC(psf_tel,fov,2,nbr_pix,direction=-1)
 otf_atmo_1500 = ft_BASIC(psf_LP_1500,fov, 2,nbr_pix,direction=-1)/ft_BASIC(psf_tel,fov,2,nbr_pix,direction=-1)
-otf_atmo_2000 = np.abs(ft_BASIC(psf_LP,fov, 2,nbr_pix,direction=-1)/ft_BASIC(psf_tel,fov,2,nbr_pix,direction=-1)) # comme le LP à été calculé pour 2000ms
+
+#%%
+otf_atmo_2000 = np.abs(ft_BASIC(psf_LP,fov, 1.8,nbr_pix,direction=-1)/ft_BASIC(psf_tel,fov,1.8,nbr_pix,direction=-1)) # comme le LP à été calculé pour 2000ms
 
 
-R = 1
-grid_x, grid_y = np.meshgrid(np.linspace(-R, R, nbr_pix), np.linspace(-R, R, nbr_pix))
-mask = np.sqrt(grid_x**2+grid_y**2) <= 1
+
 
 #%%
 # ! masque polygone, de N côté
@@ -469,6 +473,10 @@ poly = n(grid_x,grid_y,12) <= 1
 
 plt.imshow(poly)
 #%%
+R = 1
+grid_x, grid_y = np.meshgrid(np.linspace(-R, R, nbr_pix), np.linspace(-R, R, nbr_pix))
+mask = np.sqrt(grid_x**2+grid_y**2) <= 1.1
+
 otf_atmo_filtr_500 = otf_atmo_500*mask
 otf_atmo_filtr_1000 = otf_atmo_1000*mask
 otf_atmo_filtr_1500 = otf_atmo_1500*mask
@@ -609,21 +617,37 @@ with fits.open(f'fits/MTF/MTF_{choix_MTF}.fits') as hdul:
 
 #%%
 # TODO Faire le découpage du quart en bas à droite de la MTF
-quad_MTF = MTF[nbr_pix//2:, nbr_pix//2:]
+
+
+
+MTF_ud = np.flipud(MTF)
+MTF_sym = np.fliplr(MTF_ud)
+
+MTF_sum = MTF+MTF_sym
+MTF_mean = MTF_sum/2
+
+plt.figure()
+plt.imshow(MTF_mean,norm=colors.LogNorm())
+plt.colorbar()
+plt.title("Quadrant de la MTF utilisé pour AMPL")
+plt.show()
+
+quad_MTF = MTF_mean[nbr_pix//2:, nbr_pix//2:]
 
 # * Permet d'afficher le quadrant de MTF considéré
 plt.figure()
-plt.imshow(quad_MTF,norm=colors.LogNorm(vmin=0.7,vmax=0.9))
+plt.imshow(quad_MTF,norm=colors.LogNorm())
+plt.colorbar()
 plt.title("Quadrant de la MTF utilisé pour AMPL")
 plt.show()
 
 #%%
-with open(f"AMPL/quad_MTF_{choix_MTF}.dat","w") as file:
+with open(f"AMPL/quad_MTF_{choix_MTF}_edge.dat","w") as file:
     quad_MTF_txt = np.array2string(quad_MTF)
     file.write(quad_MTF_txt)
     file.close()
 #%%
-fits.writeto(f"quad_MTF_{choix_MTF}.fits", quad_MTF, overwrite=True)
+fits.writeto(f"quad_MTF_{choix_MTF}_edge.fits", quad_MTF, overwrite=True)
 
 
 #%%
