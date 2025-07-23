@@ -8,10 +8,6 @@ from astropy.io import fits
 from matplotlib.path import Path
 import matplotlib.colors as colors
 
-
-# outils de selectrion des apertures
-## contiendra apodiseur, pupille elt et une ouverture circulaire opur des test, mais a ne pas utiliser avec les résidus car sont suelement adapté à 'louvertue de l'elt
-
 #%%
 class Aperture:
     """
@@ -112,8 +108,9 @@ class PSF_utils:
                 A = np.multiply(phase,mat)
                 im = np.zeros((m,self.N,self.N)) # allocation initial de la mémoire pour le calcul
                 for i, A_i in enumerate(A):
-                    print(i)
-                    if i%z == 0 :
+                    #print(i)
+                    if i%(self.z//2) == 0 :
+                        print(i)
                         im[i,:,:] = (ft_BASIC(A_i, 1132 / 1024, self.fov, self.N, direction=1).real)**2
                     #print(f'Image {i} fini')
                 psf = np.mean(im, axis=0)
@@ -125,13 +122,15 @@ class PSF_utils:
 # * Choix de la pupille
 aper = Aperture('ELT')
 # * Choix des paramètres
-owa = 8 # OWA de l'apodiseur considéré
+owa = 10 # OWA de l'apodiseur considéré
 N = 2 # résolution, valeur minimale pour etre a Nyquist
-fov = int(2*owa) # champ de vue de la psf
+fov = int(2.5*owa) # champ de vue de la psf
 nbr_pix = int(N * 2 * fov) # nombre de pixels, minimum 2 par lambda/D pour Nyquist à N=1
 M = 2000 # temps d'OA considéré, en ms #//1min pour faire 1500 avec np multiply
-z = 10
-psf_LP = PSF_utils(aper,fov,nbr_pix,z,M).PSF()
+psf_LP = PSF_utils(aper,fov,nbr_pix,2,M).PSF()
+#%%
+z = 10 # saut en ms d'écran de phase
+psf_LP_skip = PSF_utils(aper,fov,nbr_pix,z,M).PSF()
 #psf_tel = PSF_utils(aper,fov,nbr_pix).PSF()
 #%%
 # ! PSF longue pose pour différents temps de pose
@@ -159,8 +158,41 @@ plt.colorbar()
 plt.xlabel(r"$\lambda/D$")
 plt.xticks(rotation=45, ha="right")
 plt.ylabel(r"$\lambda/D$")
-plt.title(f'PSF longue pose pour une image toutes les {z} ms \n soit {M/z} images')
+plt.title(f'PSF longue pose')
 plt.show()
+
+plt.figure()
+plt.imshow(psf_LP_skip/psf_LP_skip.max(), norm=colors.LogNorm(vmin=1e-6),extent=[x_min,x_max,x_min,x_max])
+plt.colorbar()
+plt.xlabel(r"$\lambda/D$")
+plt.xticks(rotation=45, ha="right")
+plt.ylabel(r"$\lambda/D$")
+plt.title(f'PSF longue pose pour une image toutes les {z} ms \n soit {M/z/2} images')
+plt.show()
+
+plt.figure()
+plt.imshow(psf_LP/psf_LP.max() - psf_LP_skip/psf_LP_skip.max(), norm=colors.LogNorm(vmin=1e-6,vmax=1),extent=[x_min,x_max,x_min,x_max])
+plt.colorbar()
+plt.xlabel(r"$\lambda/D$")
+plt.xticks(rotation=45, ha="right")
+plt.ylabel(r"$\lambda/D$")
+plt.title(f'Différence entre la PSF longue pose et \n PSF longue pose pour une image toutes les {z} ms \n soit {M/z} images')
+plt.show()
+
+
+plt.figure()
+azav_lp = AZAV(psf_LP/psf_LP.max(),owa,0.1)[0]
+azav_lp_skip = AZAV(psf_LP_skip/psf_LP_skip.max(),owa,0.1)[0]
+plt.semilogy(np.linspace(0,x_max,nbr_pix//2),azav_lp,label='PSF LP')
+plt.semilogy(np.linspace(0,x_max,nbr_pix//2),azav_lp_skip,label='PSF LP skip')
+plt.legend()
+plt.xlabel(r"$\lambda/D$")
+plt.ylabel("Contraste")
+plt.title(f"AZAV de la PSF longue pose et \n PSF longue pose pour une image toutes les {z} ms \n soit {M/z} images")
+plt.show()
+
+
+
 #%%
 plt.figure()
 plt.imshow(psf_aper/psf_aper.max(), norm=colors.LogNorm(vmin=1e-6),extent=[x_min,x_max,x_min,x_max])
