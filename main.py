@@ -148,9 +148,9 @@ fits.writeto('PSF_2000_ELT_8.fits', psf_LP_2000)#, overwrite=True)
 #%%
 # * Affichage de la PSF
 
-b=1 #lambda/D
-x_min=y_min=-b*fov/2
-x_max=y_max=b*fov/2
+b = 1 #lambda/D
+x_min = y_min = -b*fov/2
+x_max = y_max = b*fov/2
 #%%
 plt.figure()
 plt.imshow(psf_LP/psf_LP.max(), norm=colors.LogNorm(vmin=1e-6),extent=[x_min,x_max,x_min,x_max])
