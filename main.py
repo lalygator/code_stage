@@ -7,6 +7,7 @@ import pickle
 from astropy.io import fits
 from matplotlib.path import Path
 import matplotlib.colors as colors
+from interp_phase import interps
 
 #%%
 class Aperture:
@@ -29,6 +30,11 @@ class Aperture:
                     fits_file = f'./{self.name}.fits'
                     with fits.open(fits_file) as hdul:
                         fits_data = hdul[0].data  # hdul[0] pour le premier HDU, .data pour l'array numpy
+                    self.mat = fits_data
+                case 'ATM':
+                    fits_file = f'./fits/APOD_1_QDZ.fits'
+                    with fits.open(fits_file) as hdul:
+                        fits_data = hdul[0].data
                     self.mat = fits_data
                 case 'circ':
                     x_circ,y_circ=np.meshgrid(np.linspace(-1,1,1132),np.linspace(-1,1,1132))
@@ -70,48 +76,29 @@ class PSF_utils:
                 psf = (ft_BASIC(self.aperture.matrix(), 1132 / 1024, self.fov, self.N, direction=1).real)**2
                 self.psf = psf
             else:
-                ecran = np.empty((self.OAtime//2,1132,1132))
-                if self.OAtime <= 200:
-                    file_path_name = './interp_funcs_500_600.pkl'
-                    with open(file_path_name, 'rb') as file:
-                        loaded_interp_funcs = pickle.load(file)
-                    phase_interps = loaded_interp_funcs
-                    ecran = np.array(phase_interps)
-                elif self.OAtime <= 1000:
-                        file_path_name = './phase_interps_0_500.pkl'
-                        with open(file_path_name, 'rb') as file:
-                            loaded_interp_funcs = pickle.load(file)
-                        phase_interps = loaded_interp_funcs
-                        ecran = np.array(phase_interps)
-                        #file_path_name = './phase_interps_500_1000.pkl'
-                elif self.OAtime<=2000:
-                    file_path_name_1 = './phase_interps_0_500.pkl'
-                    with open(file_path_name_1, 'rb') as file:
-                        loaded_interp_funcs = pickle.load(file)
-                    ecran[:500,:,:] = loaded_interp_funcs
-                    file_path_name_2 = './phase_interps_500_1000.pkl'
-                    with open(file_path_name_2, 'rb') as file:
-                        loaded_interp_funcs = pickle.load(file)
-                    ecran[500:self.OAtime//2,:,:] = loaded_interp_funcs[:np.abs(self.OAtime//2-500),:,:]
-                else:
-                    raise ValueError("Ce temps d'écran de phase n'est pas disponible")
-                
-                # with open(file_path_name, 'rb') as file:
-                #     loaded_interp_funcs = pickle.load(file)
-                # phase_interps = loaded_interp_funcs
-            
-                m = self.OAtime//2 # nombre d'écran de phase considéré 
+                fits_path = '/Users/lalyboyer/Desktop/code_stage/DATA_WF_small.fits'
+                with fits.open(fits_path) as hdul:
+                    phase = hdul[0].data
 
+                x1 = np.linspace(-0.5,0.5,400) #écran OA
+                x2 = np.linspace(-39/38.542/2,39/38.542/2,100) #écran apodiseur standard
+                ecran = interps(phase, x1, x2, 1000, self.z)
+                #ecran = np.empty((self.OAtime//2,1132,1132))
+
+                m = self.OAtime//2 # nombre d'écran de phase considéré 
                 mat = self.aperture.matrix() # matrice de la pupille/de l'apodiseur
-                calc = ecran[:m,:,:] # array des écrans de phases considéré
+                ecran = np.array(ecran)  # Ensure ecran is a NumPy array
+                calc = ecran[:m,:,:]     # array des écrans de phases considéré
                 phase = np.exp(2j*np.pi*calc/1.65e-6)
                 A = np.multiply(phase,mat)
                 im = np.zeros((m,self.N,self.N)) # allocation initial de la mémoire pour le calcul
+                print(np.shape(A))
                 for i, A_i in enumerate(A):
                     #print(i)
-                    if i%(self.z//2) == 0 :
+                    if i%(self.z) == 0 : 
                         print(i)
-                        im[i,:,:] = (ft_BASIC(A_i, 1132 / 1024, self.fov, self.N, direction=1).real)**2
+                        #im[i,:,:] = (ft_BASIC(A_i, 1132 / 1024, self.fov, self.N, direction=1).real)**2
+                        im[i,:,:] = (ft_BASIC(A_i, 39 / 38.542, self.fov, self.N, direction=1).real)**2
                     #print(f'Image {i} fini')
                 psf = np.mean(im, axis=0)
                 self.psf = psf
@@ -120,16 +107,17 @@ class PSF_utils:
         return self.psf
 
 # * Choix de la pupille
-aper = Aperture('ELT')
+aper = Aperture('ATM')
 # * Choix des paramètres
-owa = 10 # OWA de l'apodiseur considéré
+iwa = 3
+owa = 8 # OWA de l'apodiseur considéré
 N = 2 # résolution, valeur minimale pour etre a Nyquist
 fov = int(2.5*owa) # champ de vue de la psf
 nbr_pix = int(N * 2 * fov) # nombre de pixels, minimum 2 par lambda/D pour Nyquist à N=1
 M = 2000 # temps d'OA considéré, en ms #//1min pour faire 1500 avec np multiply
 psf_LP = PSF_utils(aper,fov,nbr_pix,2,M).PSF()
 #%%
-z = 10 # saut en ms d'écran de phase
+z = 200 # saut en ms d'écran de phase
 psf_LP_skip = PSF_utils(aper,fov,nbr_pix,z,M).PSF()
 #psf_tel = PSF_utils(aper,fov,nbr_pix).PSF()
 #%%
@@ -167,17 +155,17 @@ plt.colorbar()
 plt.xlabel(r"$\lambda/D$")
 plt.xticks(rotation=45, ha="right")
 plt.ylabel(r"$\lambda/D$")
-plt.title(f'PSF longue pose pour une image toutes les {z} ms \n soit {M/z/2} images')
+plt.title(f'PSF longue pose pour une image toutes les {z} ms \n soit {M/z} images')
 plt.show()
 
-plt.figure()
-plt.imshow(psf_LP/psf_LP.max() - psf_LP_skip/psf_LP_skip.max(), norm=colors.LogNorm(vmin=1e-6,vmax=1),extent=[x_min,x_max,x_min,x_max])
-plt.colorbar()
-plt.xlabel(r"$\lambda/D$")
-plt.xticks(rotation=45, ha="right")
-plt.ylabel(r"$\lambda/D$")
-plt.title(f'Différence entre la PSF longue pose et \n PSF longue pose pour une image toutes les {z} ms \n soit {M/z} images')
-plt.show()
+# plt.figure()
+# plt.imshow(psf_LP/psf_LP.max() - psf_LP_skip/psf_LP_skip.max(), norm=colors.LogNorm(vmin=1e-6,vmax=1),extent=[x_min,x_max,x_min,x_max])
+# plt.colorbar()
+# plt.xlabel(r"$\lambda/D$")
+# plt.xticks(rotation=45, ha="right")
+# plt.ylabel(r"$\lambda/D$")
+# plt.title(f'Différence entre la PSF longue pose et \n PSF longue pose pour une image toutes les {z} ms \n soit {M/z} images')
+# plt.show()
 
 
 plt.figure()
@@ -190,6 +178,40 @@ plt.xlabel(r"$\lambda/D$")
 plt.ylabel("Contraste")
 plt.title(f"AZAV de la PSF longue pose et \n PSF longue pose pour une image toutes les {z} ms \n soit {M/z} images")
 plt.show()
+
+#%%
+# ! Calcul du contraste
+
+def cr(im,iwa,owa,N,nbr_pix):
+    y, x = np.indices((nbr_pix, nbr_pix))
+    cx, cy = nbr_pix // 2, nbr_pix // 2
+
+    r_int = iwa*2*N  
+    r_ext = owa*2*N 
+
+    # Calcul de la distance de chaque pixel au centre
+    r = np.sqrt((x - cx)**2 + (y - cy)**2)
+
+    # Masque : True pour les pixels entre les deux rayons
+    mask = (r >= r_int) & (r <= r_ext)
+    # Masque pour le quadrant supérieur droit (par exemple)
+    # Quadrant selection masks
+    mask_qua_ur = (r >= r_int) & (r <= r_ext) & (x >= cx) & (y <= cy)   # upper right
+    mask_qua_ul = (r >= r_int) & (r <= r_ext) & (x <= cx) & (y <= cy)   # upper left
+    mask_qua_lr = (r >= r_int) & (r <= r_ext) & (x >= cx) & (y >= cy)   # lower right
+    mask_qua_ll = (r >= r_int) & (r <= r_ext) & (x <= cx) & (y >= cy)   # lower left
+
+    # Example: choose which quadrant to use
+    mask = mask_qua_ur  # Change to mask_qua_ul, mask_qua_lr, or mask_qua_ll as needed
+    plt.figure()
+    plt.imshow(im/im.max(), norm=colors.LogNorm(vmin=1e-6))
+    plt.title("PSF avec masque quadrant")
+    plt.colorbar()
+    plt.contour(mask, colors='r', linewidths=0.5)
+    return np.mean((im/im.max())[mask])
+
+
+print(f'{cr(psf_LP_skip,iwa,owa,N,nbr_pix):2e}')
 
 
 

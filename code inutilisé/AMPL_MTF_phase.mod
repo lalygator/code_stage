@@ -1,7 +1,5 @@
 param pi := 4*atan(1);
 
-param lbd := 1650e-9; #longueur d'onde
-
 #param SPEC {{i in 1..4}};
 #read {{i in 1..4}} SPEC[i] < INFO.txt;
 
@@ -11,8 +9,8 @@ param IWA := 3;  #SPEC[1];
 #Outer working angle = angle externe, en lambda/D
 param OWA := 8; #SPEC[2];
 #Nombre entier de points dans la pupille
-param N := 50; #283; #566;
-param P := 10; #nombre d'écran de phase
+param N := 100; #283; #566;
+param P := 10 #nombre d'écran de phase
 
 #Echantillonage de la pupille (taille d'un pixel)
 param dx := 39/38.542/(2*N);
@@ -24,22 +22,17 @@ param T_constraint := 0.5;
 #Vecteurs décrivant le quart de la pupille 
 set Xs := setof {j in -N+0.5..N-0.5 by 1} j*dx;
 set Ys := setof {j in -N+0.5..N-0.5 by 1} j*dy;
-set Is := setof {j in 0..P-1 by 1} j; #vecteur allant de 0 à P par pas de 1
+set Is := setof {j in 1..P by 1} j; #vecteur allant de 0 à P par pas de 1
 
 # Matrice pupille
 param EELT {x in Xs,y in Ys};
 # On remplit la matrice pupille avec les données d'un fichier externe
-read {x in Xs,y in Ys} EELT[x,y] < Pupil_ELT_100.dat;
+read {x in Xs,y in Ys} EELT[x,y] < ELT_100_Q.dat;
 # faire un masque avec les abberation 1_mask
 
 # Initialisation des écran de phase 
 param Phase {x in Xs, y in Ys, i in Is};
-set indices := setof {j in 0..9 by 1} j;
-  
-for {i in indices} {
-    read {x in Xs,y in Ys} Phase[x,y,i] < (sprintf("phase_interp_100_%d.dat",i));
-}
-
+read {x in Xs,y in Ys, i in Is} Phase[x,y,i] < file_phase.dat;
 ## Il faut créer un fichier file_phase.dat en conséquence comme un cube avec le meme nombre de pixel par contre
 
 # On définit la pupille utile pour l'apodiseur
@@ -59,7 +52,7 @@ param dxi := OWA/M; # = 1/2 ?
 param deta := OWA/M;
 
 # On définit les vecteurs xi et eta qui décrivent le plan focal
-set Xis0 := setof {j in -M..M} j*dxi;
+set Xis0 := setof {j in 0..M} j*dxi;
 set Xis := Xis0 union {IWA,IWA+0.1,IWA+0.2,IWA+0.3,OWA-0.25,OWA};
 set Etas0 := setof {j in 0..M} j*deta;       
 set Etas := Etas0 union {IWA,IWA+0.1,IWA+0.2,IWA+0.3,OWA-0.25,OWA};
@@ -93,13 +86,13 @@ minimize contrast: c;
 # on a un E_r et un E_i
 
 # Calcul de la première TF (sur x) pour chaque y, pour chaque écran de phase i
-subject to ACC_def {xi in Xis, y in Ys, i in Is}: ACC[xi,y,i] = sum {x in Xs: (x, y) in Pupil} A[x,y]*cos(2*pi*Phase[x,y,i]/lbd)*cos(2*pi*x*xi)*dx;
+subject to ACC_def {xi in Xis, y in Ys, i in Is}: ACC[xi,y,i] = sum {x in Xs: (x, y) in Pupil} A[x,y]*cos(Phase[x,y,i])*cos(2*pi*x*xi)*dx;
 
-subject to ACS_def {xi in Xis, y in Ys, i in Is}: ACS[xi,y,i] = sum {x in Xs: (x,y) in Pupil} A[x,y]*cos(2*pi*Phase[x,y,i]/lbd)*sin(2*pi*x*xi)*dx;
+subject to ACS_def {xi in Xis, y in Ys, i in Is}: ACS[xi,y,i] = sum {x in Xs: (x,y) in Pupil} A[x,y]*cos(Phase[x,y,i])*sin(2*pi*x*xi)*dx;
 
-subject to ASC_def {xi in Xis, y in Ys, i in Is}: ASC[xi,y,i] = sum {x in Xs: (x, y) in Pupil} A[x,y]*sin(2*pi*Phase[x,y,i]/lbd)*cos(2*pi*x*xi)*dx;
+subject to ASC_def {xi in Xis, y in Ys, i in Is}: ASC[xi,y,i] = sum {x in Xs: (x, y) in Pupil} A[x,y]*sin(Phase[x,y,i])*cos(2*pi*x*xi)*dx;
 
-subject to ASS_def {xi in Xis, y in Ys, i in Is}: ASS[xi,y,i] = sum {x in Xs: (x,y) in Pupil} A[x,y]*sin(2*pi*Phase[x,y,i]/lbd)*sin(2*pi*x*xi)*dx;
+subject to ASS_def {xi in Xis, y in Ys, i in Is}: ASS[xi,y,i] = sum {x in Xs: (x,y) in Pupil} A[x,y]*sin(Phase[x,y,i])*sin(2*pi*x*xi)*dx;
 
 # Calcul de la deuxième TF (sur y) pour chaque xi, pour chaque écran de phase i
 
@@ -114,7 +107,7 @@ subject to E00_def : E00 = sum {(x,y) in Pupil} A[x,y]*dx*dy;
 subject to sidelobe_R_DZ_pos {(xi,eta) in DH, i in Is}: E_r[xi,eta,i] <= c;
 subject to sidelobe_R_DZ_neg {(xi,eta) in DH, i in Is}: E_r[xi,eta,i] >= -c;
 subject to sidelobe_I_DZ_pos {(xi,eta) in DH, i in Is}: E_i[xi,eta,i] <= c;
-subject to sidelobe_I_DZ_neg {(xi,eta) in DH, i in Is}: E_i[xi,eta,i] >= -c;
+subject to sidelobe_I_DZ_pos {(xi,eta) in DH, i in Is}: E_i[xi,eta,i] >= -c;
 
 # On contraint la transmission de l'apodiseur
 subject to TR_MIN: E00/PUP_TR >= T_constraint*0.99;
@@ -122,8 +115,8 @@ subject to TR_MAX: E00/PUP_TR <= T_constraint*1.01;
 
 # On appelle l'algo de résolution pour résoudre itérativement le problème
 option solver gurobi;                                                  
-option gurobi_options "tech:outlev=1 pre:solve=1 alg:method=2 bar:crossover=0 bar:homog=1 bar:iterlim=100";      
+option gurobi_options "tech:outlev=1 pre:solve=0 alg:method=2 bar:crossover=0 bar:homog=1 bar:iterlim=100";      
 solve;
 
 # On sauvergarde le résultat
-printf {x in Xs, y in Ys}: "%10f \n", A[x,y] > "APOD_multiple_HDZ.dat";
+printf {x in Xs, y in Ys}: "%10f \{"n"}", A[x,y] > "APOD_MTF.dat";

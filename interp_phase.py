@@ -20,14 +20,16 @@ def interps(WF, x1, x2, n, z):
     return phase_interps
 
 nb_pix = 100
-skip_factor = 100 #nombre d'écran de phase skipped
+skip_factor = 1 #nombre d'écran de phase skipped
 # si ça vaut 5 alors on aura 200 au final
 
 
 WF = phase
 x1 = np.linspace(-0.5,0.5,400) #écran OA
 x2 = np.linspace(-39/38.542/2,39/38.542/2,nb_pix) #écran apodiseur standard
-phase_interps = interps(WF, x1, x2, 1000, skip_factor) #1000 correspond au nombre d'écran considér, on pourrait en choisir moins
+phase_interps = interps(WF, x1, x2, 1000, skip_factor) #1000 correspond au nombred'écran considér, on pourrait en choisir moins
+#%%
+fits.writeto(f'fits/phase_interp_{nb_pix}_all.fits', np.array(phase_interps), overwrite=True)
 
 #%% 
 pup = 1-(phase[:,:,0]==0)
@@ -51,8 +53,8 @@ fits.writeto(f'fits/Pupil_ELT_100.fits', pup_fin, overwrite=True)
 # comment sauver en .dat correctement ?
 
 #%%
-for i, arr in enumerate(phase_interps):
-    WRITE_DAT(f'fits/phase_interp_{nb_pix}_{i}', arr)
+#for i, arr in enumerate(phase_interps):
+WRITE_DAT(f'fits/phase_interp_{nb_pix}_40', phase_interps[4])
 
 # %%
 # regarder les DSP
