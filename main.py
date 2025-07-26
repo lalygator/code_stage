@@ -31,11 +31,26 @@ class Aperture:
                     with fits.open(fits_file) as hdul:
                         fits_data = hdul[0].data  # hdul[0] pour le premier HDU, .data pour l'array numpy
                     self.mat = fits_data
-                case 'ATM':
+                case 'QDZ':
                     fits_file = f'./fits/APOD_1_QDZ.fits'
                     with fits.open(fits_file) as hdul:
                         fits_data = hdul[0].data
                     self.mat = fits_data
+                case 'HDZ':
+                    fits_file = f'./fits/APOD_1_HDZ.fits'
+                    with fits.open(fits_file) as hdul:
+                        fits_data = hdul[0].data
+                    self.mat = fits_data
+                case 'omg':
+                    fits_file = f'./APOD_multiple_HDZ_test_OWA8_100ecr.fits'
+                    with fits.open(fits_file) as hdul:
+                        fits_data = hdul[0].data
+                    self.mat = fits_data.reshape((100,100))
+                case 'Pupil_ELT_100':
+                    fits_file = f'./fits/Pupil_ELT_100.fits'
+                    with fits.open(fits_file) as hdul:
+                        fits_data = hdul[0].data
+                    self.mat = fits_data.reshape((100,100))
                 case 'circ':
                     x_circ,y_circ=np.meshgrid(np.linspace(-1,1,1132),np.linspace(-1,1,1132))
                     circ = x_circ**2+y_circ**2 <= (1132/1024)/2
@@ -60,7 +75,7 @@ class Aperture:
         plt.show()
 
 class PSF_utils:
-    def __init__(self, aperture, fov, N, z, OAtime=None,norm=False):
+    def __init__(self, aperture, fov, N, z=1, OAtime=None,norm=False):
         self.aperture = aperture
         self.fov = fov # champ de vue observée totale
         self.N = N # nombre de pixel
@@ -70,6 +85,7 @@ class PSF_utils:
         self.psf = None
 
     @timeit
+    # TODO Problème de correspondance entre le calcul des phase interp avec 
     def PSF(self): 
         if self.psf is None:
             if self.OAtime is None:
@@ -95,10 +111,10 @@ class PSF_utils:
                 print(np.shape(A))
                 for i, A_i in enumerate(A):
                     #print(i)
-                    if i%(self.z) == 0 : 
-                        print(i)
-                        #im[i,:,:] = (ft_BASIC(A_i, 1132 / 1024, self.fov, self.N, direction=1).real)**2
-                        im[i,:,:] = (ft_BASIC(A_i, 39 / 38.542, self.fov, self.N, direction=1).real)**2
+                    #if i%(self.z) == 0 : 
+                    print(i)
+                    #im[i,:,:] = (ft_BASIC(A_i, 1132 / 1024, self.fov, self.N, direction=1).real)**2
+                    im[i,:,:] = (ft_BASIC(A_i, 39/38.542, self.fov, self.N, direction=1).real)**2
                     #print(f'Image {i} fini')
                 psf = np.mean(im, axis=0)
                 self.psf = psf
@@ -107,7 +123,7 @@ class PSF_utils:
         return self.psf
 
 # * Choix de la pupille
-aper = Aperture('ATM')
+aper = Aperture('omg')
 # * Choix des paramètres
 iwa = 3
 owa = 8 # OWA de l'apodiseur considéré
@@ -115,16 +131,19 @@ N = 2 # résolution, valeur minimale pour etre a Nyquist
 fov = int(2.5*owa) # champ de vue de la psf
 nbr_pix = int(N * 2 * fov) # nombre de pixels, minimum 2 par lambda/D pour Nyquist à N=1
 M = 2000 # temps d'OA considéré, en ms #//1min pour faire 1500 avec np multiply
-psf_LP = PSF_utils(aper,fov,nbr_pix,2,M).PSF()
+psf_LP = PSF_utils(aper,fov,nbr_pix,OAtime=M).PSF()
 #%%
-z = 200 # saut en ms d'écran de phase
+psf_corono = PSF_utils(aper,fov,nbr_pix).PSF()
+psf_LP_ELT = PSF_utils(Aperture('Pupil_ELT_100'),fov,nbr_pix,OAtime=2000).PSF()
+#%%
+z = 10 # saut en nombre d'écran de phase
 psf_LP_skip = PSF_utils(aper,fov,nbr_pix,z,M).PSF()
-#psf_tel = PSF_utils(aper,fov,nbr_pix).PSF()
+psf_tel = PSF_utils(Aperture('Pupil_ELT_100'),fov,nbr_pix).PSF()
 #%%
 # ! PSF longue pose pour différents temps de pose
-psf_LP_500 = PSF_utils(aper,fov,nbr_pix,500).PSF()
-psf_LP_1000 = PSF_utils(aper,fov,nbr_pix,1000).PSF()
-psf_LP_1500 = PSF_utils(aper,fov,nbr_pix,1500).PSF()
+psf_LP_500 = PSF_utils(aper,fov,nbr_pix,OAtime=500).PSF()
+psf_LP_1000 = PSF_utils(aper,fov,nbr_pix,OAtime=1000).PSF()
+psf_LP_1500 = PSF_utils(aper,fov,nbr_pix,OAtime=1500).PSF()
 psf_LP_2000 = psf_LP#PSF_utils(aper,fov,nbr_pix,2000).PSF()
 #%%
 fits.writeto('PSF_500_ELT_8.fits', psf_LP_500)#, overwrite=True)
@@ -141,7 +160,7 @@ x_min = y_min = -b*fov/2
 x_max = y_max = b*fov/2
 #%%
 plt.figure()
-plt.imshow(psf_LP/psf_LP.max(), norm=colors.LogNorm(vmin=1e-6),extent=[x_min,x_max,x_min,x_max])
+plt.imshow(psf_LP/psf_LP.max(), norm=colors.LogNorm(vmin=1e-5),extent=[x_min,x_max,x_min,x_max])
 plt.colorbar()
 plt.xlabel(r"$\lambda/D$")
 plt.xticks(rotation=45, ha="right")
@@ -150,12 +169,12 @@ plt.title(f'PSF longue pose')
 plt.show()
 
 plt.figure()
-plt.imshow(psf_LP_skip/psf_LP_skip.max(), norm=colors.LogNorm(vmin=1e-6),extent=[x_min,x_max,x_min,x_max])
+plt.imshow(psf_LP_skip/psf_LP_skip.max(), norm=colors.LogNorm(vmin=1e-5),extent=[x_min,x_max,x_min,x_max])
 plt.colorbar()
 plt.xlabel(r"$\lambda/D$")
 plt.xticks(rotation=45, ha="right")
 plt.ylabel(r"$\lambda/D$")
-plt.title(f'PSF longue pose pour une image toutes les {z} ms \n soit {M/z} images')
+plt.title(f'PSF longue pose pour une image toutes les {z} ms \n soit {M/z/2} images')
 plt.show()
 
 # plt.figure()
@@ -176,7 +195,7 @@ plt.semilogy(np.linspace(0,x_max,nbr_pix//2),azav_lp_skip,label='PSF LP skip')
 plt.legend()
 plt.xlabel(r"$\lambda/D$")
 plt.ylabel("Contraste")
-plt.title(f"AZAV de la PSF longue pose et \n PSF longue pose pour une image toutes les {z} ms \n soit {M/z} images")
+plt.title(f"AZAV de la PSF longue pose et \n PSF longue pose pour une image toutes les {z} ms \n soit {M/z/2} images")
 plt.show()
 
 #%%
@@ -192,26 +211,28 @@ def cr(im,iwa,owa,N,nbr_pix):
     # Calcul de la distance de chaque pixel au centre
     r = np.sqrt((x - cx)**2 + (y - cy)**2)
 
-    # Masque : True pour les pixels entre les deux rayons
     mask = (r >= r_int) & (r <= r_ext)
     # Masque pour le quadrant supérieur droit (par exemple)
-    # Quadrant selection masks
-    mask_qua_ur = (r >= r_int) & (r <= r_ext) & (x >= cx) & (y <= cy)   # upper right
-    mask_qua_ul = (r >= r_int) & (r <= r_ext) & (x <= cx) & (y <= cy)   # upper left
-    mask_qua_lr = (r >= r_int) & (r <= r_ext) & (x >= cx) & (y >= cy)   # lower right
-    mask_qua_ll = (r >= r_int) & (r <= r_ext) & (x <= cx) & (y >= cy)   # lower left
+    mask_hd = (r>=r_int) & (r<=r_ext) & (x>=cx) & (y<=cy)
+    mask_hg = (r>= r_int) & (r<=r_ext) & (x<=cx) & (y<=cy)
+    mask_bd = (r>= r_int) & (r<=r_ext) & (x>=cx) & (y>=cy)
+    mask_bg = (r>=r_int) & (r<=r_ext) & (x<=cx) & (y>=cy)
+       
+    mask_dr = (r>= r_int) & (r<=r_ext) & (x>=cx)# & (y>=cy)
+    mask_ga = (r>=r_int) & (r<=r_ext) & (x<=cx)# & (y>=cy)
 
-    # Example: choose which quadrant to use
-    mask = mask_qua_ur  # Change to mask_qua_ul, mask_qua_lr, or mask_qua_ll as needed
+    mask = mask
     plt.figure()
-    plt.imshow(im/im.max(), norm=colors.LogNorm(vmin=1e-6))
+    plt.imshow(im/im.max(), norm=colors.LogNorm(vmin=1e-5))
     plt.title("PSF avec masque quadrant")
     plt.colorbar()
     plt.contour(mask, colors='r', linewidths=0.5)
-    return np.mean((im/im.max())[mask])
 
+    return [np.mean((im/im.max())[mask]), np.var(((im/im.max())[mask]))]
 
-print(f'{cr(psf_LP_skip,iwa,owa,N,nbr_pix):2e}')
+mes = cr(psf_LP_skip,iwa,owa,N,nbr_pix)
+
+print(f'Moyenne : {mes[0]:2e}\nVariance : {mes[1]:2e}')
 
 
 

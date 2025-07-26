@@ -20,7 +20,7 @@ def interps(WF, x1, x2, n, z):
     return phase_interps
 
 nb_pix = 100
-skip_factor = 1 #nombre d'écran de phase skipped
+skip_factor = 10 #nombre d'écran de phase skipped
 # si ça vaut 5 alors on aura 200 au final
 
 
@@ -53,8 +53,8 @@ fits.writeto(f'fits/Pupil_ELT_100.fits', pup_fin, overwrite=True)
 # comment sauver en .dat correctement ?
 
 #%%
-#for i, arr in enumerate(phase_interps):
-WRITE_DAT(f'fits/phase_interp_{nb_pix}_40', phase_interps[4])
+for i, arr in enumerate(phase_interps):
+    WRITE_DAT(f'fits/phase_interp_{nb_pix}_{i}', arr)
 
 # %%
 # regarder les DSP

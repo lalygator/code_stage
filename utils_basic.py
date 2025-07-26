@@ -1981,10 +1981,15 @@ def MPS_DSP(N,DSP):
     return screen
 
 def DSP(WF,gamma,P,alpha_min,alpha_max):
-    #WF: wavefront
-    #gamma : ratio of array physical size and pupil physical size
-    #P: pupil array (potentially larger than pupil)
-    # alpha_min & alpha_max : min and max spatial frequencies
+    """
+    WF: wavefront
+
+    gamma : ratio of array physical size and pupil physical size
+
+    P: pupil array (potentially larger than pupil)
+
+    alpha_min & alpha_max : min and max spatial frequencies
+    """
     [Nx,Ny] = np.shape(WF)
     WF = WF - np.mean(WF[P>1e-16])
     #OWA = Nx / 2. #original
