@@ -3,9 +3,7 @@ import numpy as np
 from astropy.io import fits
 from utils_OA import READ_DAT, SQ, timeit, ft_BASIC, AZAV
 import matplotlib.pyplot as plt
-import pickle
 from astropy.io import fits
-from matplotlib.path import Path
 import matplotlib.colors as colors
 from interp_phase import interps
 

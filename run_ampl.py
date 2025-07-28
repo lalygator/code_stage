@@ -7,13 +7,15 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as colors
 
 ampl = AMPL()
-ampl.read("AMPL_MTF_phase_2.mod")
+ampl.read("AMPL/AMPL_MTF_3TF.mod")
 
 # %%
-#test = READ_DAT('./TEST_multiple_defocus')
-test = READ_DAT('./APOD_multiple_HDZ_test_OWA8_100ecr')
 
-fits.writeto('APOD_multiple_HDZ_test_OWA8_100ecr.fits', test, overwrite=True)
+# TODO Classe pour enregistrer en fits, afficher et créer un array 'apod'
+#test = READ_DAT('./TEST_multiple_defocus')
+test = READ_DAT('./APOD_MTF_3TF')
+
+fits.writeto('APOD_MTF_3TF.fits', test, overwrite=True)
 
 pup = np.reshape(test,(100,100))
 
@@ -28,6 +30,7 @@ plt.figure()
 plt.imshow(pup>=0.9)
 plt.colorbar()
 
+# TODO Classe pour faire un .affiche
 
 iwa = 3
 owa = 8# OWA de l'apodiseur considéré
@@ -48,12 +51,6 @@ plt.xlabel(r"$\lambda/D$")
 plt.xticks(rotation=45, ha="right")
 plt.ylabel(r"$\lambda/D$")
 plt.title(f'PSF longue pose')
-circle_owa = plt.Circle((0, 0), owa, color='red', fill=False, linewidth=2, label='OWA')
-circle_iwa = plt.Circle((0, 0), iwa, color='blue', fill=False, linewidth=2, label='IWA')
-ax = plt.gca()
-ax.add_patch(circle_owa)
-ax.add_patch(circle_iwa)
-ax.set_aspect('equal')
 plt.show()
 
 

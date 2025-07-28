@@ -14,11 +14,11 @@ with fits.open(fits_path) as hdul:
 def interps(WF, x1, x2, n, z):
     # Interpolation des phases
     interp_funcs = [RectBivariateSpline(x1, x1, WF[:,:,i]) for i in range(n) if i%z==0]
-        # TODO Faire en sorte qu'on puisse skip des écrans de phase
-
     phase_interps = [interp(x2, x2) for interp in interp_funcs]
     return phase_interps
 
+
+#%% 
 nb_pix = 100
 skip_factor = 10 #nombre d'écran de phase skipped
 # si ça vaut 5 alors on aura 200 au final
@@ -29,7 +29,10 @@ x1 = np.linspace(-0.5,0.5,400) #écran OA
 x2 = np.linspace(-39/38.542/2,39/38.542/2,nb_pix) #écran apodiseur standard
 phase_interps = interps(WF, x1, x2, 1000, skip_factor) #1000 correspond au nombred'écran considér, on pourrait en choisir moins
 #%%
-fits.writeto(f'fits/phase_interp_{nb_pix}_all.fits', np.array(phase_interps), overwrite=True)
+for i, arr in enumerate(phase_interps):
+    WRITE_DAT(f'fits/phase_interp_{nb_pix}_{i}', arr)
+
+#fits.writeto(f'fits/phase_interp_{nb_pix}_all.fits', np.array(phase_interps), overwrite=True)
 
 #%% 
 pup = 1-(phase[:,:,0]==0)
@@ -50,14 +53,8 @@ pup_fin = (pup_interp >= 0.5).astype(np.float32)
 WRITE_DAT(f'fits/Pupil_ELT_100', pup_fin)
 fits.writeto(f'fits/Pupil_ELT_100.fits', pup_fin, overwrite=True)
 
-# comment sauver en .dat correctement ?
-
-#%%
-for i, arr in enumerate(phase_interps):
-    WRITE_DAT(f'fits/phase_interp_{nb_pix}_{i}', arr)
-
 # %%
-# regarder les DSP
+#! regarder les DSP
 
 dsp = DSP(phase[:,:,0], 39/38.542,pup,0,40)[1]
 dsp_norm = dsp/dsp.max()

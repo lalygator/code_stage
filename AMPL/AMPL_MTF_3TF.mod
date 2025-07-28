@@ -27,7 +27,7 @@ set Ys := setof {j in 0.5..N-0.5 by 1} j*dy;
 # Matrice pupille
 param EELT {x in Xs,y in Ys};
 # On remplit la matrice pupille avec les données d'un fichier externe
-read {x in Xs,y in Ys} EELT[x,y] < ELT_100_Q.dat;
+read {x in Xs,y in Ys} EELT[x,y] < dat/ELT_100_Q.dat;
 
 # On définit la pupille utile pour l'apodiseur
 set Pupil := setof {x in Xs, y in Ys: EELT[x,y] >= 0.5} (x,y);
@@ -100,7 +100,7 @@ set X2s := setof {j in 0.5..N2-0.5 by 1} j*dx2;
 set Y2s := setof {j in 0.5..N2-0.5 by 1} j*dy2;
 
 param MTF {x2 in X2s, y2 in Y2s};
-read {x2 in X2s, y2 in Y2s} MTF[x2,y2] < quad_MTF_ELT_8_circ_edge_ACa.dat;
+read {x2 in X2s, y2 in Y2s} MTF[x2,y2] < dat/quad_MTF_ELT_8_circ_edge_ACa.dat;
 
 # Creation des variable dans le plan P2
 var C_pup {x2 in X2s, eta in Etas};
@@ -130,4 +130,4 @@ option gurobi_options "tech:outlev=1 pre:solve=0 alg:method=2 bar:crossover=0 ba
 solve;
 
 # On sauvergarde le résultat
-printf {x in Xs, y in Ys}: "%10f \{"n"}", A[x,y] > "APOD_MTF.dat";
+printf {x in Xs, y in Ys}: "%10f \{"n"}", A[x,y] > "APOD_MTF_3TF.dat";
